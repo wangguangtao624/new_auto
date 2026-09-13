@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>new_auto 拖拽式自动化测试</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="/web/style.css">
+</head>
+<body>
+<div id="topbar">
+  <span id="logo">⬡ new_auto</span>
+  <select id="canvas-list" title="选择画布"></select>
+  <button id="btn-new">新建</button>
+  <button id="btn-rename">重命名</button>
+  <button id="btn-delete" class="danger">删除</button>
+  <span class="sep"></span>
+  <label class="chk"><input type="checkbox" id="chk-stopfail" checked> 失败即停</label>
+  <span class="sep"></span>
+  <button id="btn-save">💾 保存画布</button>
+  <button id="btn-run" class="primary">▶ 运行</button>
+  <button id="btn-gencode">⇩ 生成代码</button>
+  <span id="status" class="status"></span>
+</div>
+
+<div id="main">
+  <div id="palette">
+    <div class="pal-title">节点面板（拖到画布）</div>
+    <div id="palette-groups"></div>
+  </div>
+
+  <div id="canvas-wrap">
+    <svg id="wires"></svg>
+    <div id="canvas"></div>
+  </div>
+
+  <div id="inspector">
+    <div class="ins-title">属性</div>
+    <div id="ins-body" class="ins-empty">点击节点编辑参数<br>拖动输出圆点 → 输入圆点连线</div>
+  </div>
+</div>
+
+<div id="runlog" class="hidden">
+  <div class="runlog-head">
+    <b>运行报告</b><span id="runlog-summary"></span>
+    <button onclick="document.getElementById('runlog').classList.add('hidden')">✕</button>
+  </div>
+  <div id="runlog-body"></div>
+</div>
+
+<script src="/web/app.js"></script>
+</body>
+</html>

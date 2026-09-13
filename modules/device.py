@@ -29,9 +29,10 @@
     print(dev.get_fps())
     dev.close(); dev.release()
 """
+import ctypes
 import logging
 import time
-from ctypes import byref, c_float, create_string_buffer
+from ctypes import byref, c_float, c_uint64, create_string_buffer
 
 from .sdk import get_sdk
 
@@ -133,6 +134,24 @@ class PixelDevice:
             logger.error("device_open_video 失败, dll_err=%r", self._sdk.last_error())
         return ok
 
+    def close_video(self) -> bool:
+        """关闭视频流 (增补接口)"""
+        fn = getattr(self._sdk.testlib, "device_close_video", None)
+        if fn is None:
+            raise NotImplementedError("当前 testlib.dll 未导出 device_close_video")
+        ok = bool(fn(self._handle))
+        logger.info("device_close_video -> %s", ok)
+        return ok
+
+    def stop_streaming(self) -> bool:
+        """停止当前视频传输 (增补接口)"""
+        fn = getattr(self._sdk.testlib, "device_stop_streaming", None)
+        if fn is None:
+            raise NotImplementedError("当前 testlib.dll 未导出 device_stop_streaming")
+        ok = bool(fn(self._handle))
+        logger.info("device_stop_streaming -> %s", ok)
+        return ok
+
     def grab_frame(self) -> bool:
         """抓取一帧 (需已 open_video)"""
         self._sdk.clear_error()
@@ -159,6 +178,25 @@ class PixelDevice:
         else:
             logger.error("device_grab_one_frame_save 失败, dll_err=%r", self._sdk.last_error())
         return ok
+
+    def grab_frame_save_ex(self, save_dir: str, file_name: str):
+        """抓取一帧并保存, 同时返回帧 ID (增补接口)
+
+        :return: (是否成功, frame_id)
+        """
+        fn = getattr(self._sdk.testlib, "device_grab_one_frame_save_ex", None)
+        if fn is None:
+            raise NotImplementedError("当前 testlib.dll 未导出 device_grab_one_frame_save_ex")
+        self._sdk.clear_error()
+        frame_id = ctypes.c_uint64()
+        ok = bool(fn(self._handle, save_dir.encode("utf-8"),
+                     file_name.encode("utf-8"), byref(frame_id)))
+        if ok:
+            logger.info("device_grab_one_frame_save_ex -> %s/%s frame_id=%d",
+                        save_dir, file_name, frame_id.value)
+        else:
+            logger.error("device_grab_one_frame_save_ex 失败, dll_err=%r", self._sdk.last_error())
+        return ok, frame_id.value
 
     def get_fps(self) -> float:
         """读取当前 FPS"""

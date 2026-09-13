@@ -1,32 +1,42 @@
-# new_auto — PixelIDE(PixieDE) 硬件接口模块化封装
+# new_auto — PixelIDE(PixieDE) 硬件接口模块化封装 + 拖拽式流程工具
 
-把旧工程 `fw_auto_copy` 中散落的 PixelIDE 底层 DLL 调用，按功能最小化打包为五个独立小模块，
-并全部在真机（继电器 COM3/CH0 + MAT130YV200 模组 + MAX96712 解串器）上调试通过。
+把旧工程 `fw_auto_copy` 中散落的 PixelIDE 底层 DLL 调用，按功能最小化打包为独立小模块，
+全部在真机（继电器 COM3/CH0 + MAT130YV200 模组 + MAX96712 解串器）上调试通过。
+
+**v1.0.2 新增**: 拖拽式自动化流程画布（画布=case，节点=模块调用，自由连线组合，
+一键运行/生成 Python 用例代码），以及 image / otp / checks 三个补充模块。
 
 ## 目录结构
 
 ```
 new_auto/
 ├── README.md                 本文件
-├── REPORT.md                 模块梳理与验证报告（交付物）
+├── REPORT.md                 模块梳理与验证报告
 ├── config.json               现场硬件配置（继电器/设备/ini/固件 绑定关系）
-├── modules/                  五个功能模块
+├── modules/                  八个功能模块
 │   ├── sdk.py                DLL 加载 + 全部函数原型绑定 + 错误码助手（公共底层）
-│   ├── relay.py              (a) 继电器控制
-│   ├── device.py             (b) 外部设备控制
-│   ├── i2c.py                (c) I2C 读写
-│   ├── firmware.py           (d) 固件下载（一键下载 + Flash 级操作 + 固件协议）
+│   ├── relay.py              继电器控制 (串口 COM3, 通道级通断)
+│   ├── device.py             外部设备控制 (ini 配置, 出图, 抓帧, FPS/DN, 帧ID)
+│   ├── i2c.py                I2C 读写 (寄存器级/字节流级, A2D2/A2D4/A4D4)
+│   ├── firmware.py           固件下载 (MatFwDownload + Flash 擦写/校验/固件协议)
+│   ├── otp.py                OTP 读写 (读/存文件/写[需确认]/功能标志)      [v1.0.2]
+│   ├── image.py              图像抓取与对比 (亮度均值, 寄存器改值前后对比) [v1.0.2]
+│   ├── checks.py             固件状态检查 (版本/启动区/帧计数/算法/功能安全) [v1.0.2]
 │   └── log_setup.py          日志 + C++ SDK stdout 噪音过滤
+├── app/                      拖拽式自动化流程工具 (v1.0.2)      ← python app/server.py
+│   ├── server.py             本地服务 (纯标准库): REST API + 静态页
+│   ├── engine/
+│   │   ├── registry.py       节点注册表 (28 种节点: 电源/设备/I2C/图像/固件/检查/流程)
+│   │   ├── session.py        硬件会话 (继电器/设备/I2C 懒加载复用, 幂等上电/配置/出图)
+│   │   ├── executor.py       拓扑执行引擎 (数据沿连线传递, 失败即停)
+│   │   └── codegen.py        画布 JSON → Python 用例代码
+│   ├── web/                  节点编辑器前端 (原生 JS + SVG, 无构建依赖)
+│   ├── canvases/             画布 JSON (每个画布 = 一个 case)
+│   └── cases/                生成的 Python 用例脚本
 ├── bin/                      testlib.dll / MatFwHandler_x64.dll 及基础依赖
 ├── configs/init_file/        上电初始化 ini（当前绑定: ..._1280_880.ini）
 ├── fw/                       固件 bin（当前绑定: v4.1.7 JUNGE-A21-JZ9173-SUB）
-├── scripts/                  逐模块验证脚本 + 一键全流程
-│   ├── common.py             公共: 读配置 / 上电初始化
-│   ├── verify_relay.py       验证 1: 继电器
-│   ├── verify_device.py      验证 2: 设备出图
-│   ├── verify_i2c.py         验证 3: I2C 读写
-│   ├── verify_fw_download.py 验证 4: 固件下载（默认 dry-run, --burn 真实烧录）
-│   └── run_all.py            一键顺序跑 1→4
+├── scripts/                  逐模块真机验证脚本 + run_all
 └── logs/                     运行日志与抓帧输出
 ```
 
@@ -62,19 +72,36 @@ new_auto/
 ```bash
 cd new_auto
 
-# 一键验证全部模块（固件下载只做 dry-run，不烧写 flash）
-python scripts/run_all.py
+# === 拖拽式流程画布 (推荐) ===
+python app/server.py           # 打开 http://127.0.0.1:8765
+#  左侧节点面板拖到画布 → 圆点连线 → 属性面板改参数 → ▶ 运行
+#  「⇩ 生成代码」把画布固化为 app/cases/<case名>.py, 可脱离界面直接运行
 
-# 真实烧录固件下载验证（会重写模组 flash，A/B 双区有掉电保护）
-python scripts/run_all.py --burn
-
-# 单独验证某个模块
-python scripts/verify_relay.py
-python scripts/verify_device.py
-python scripts/verify_i2c.py
-python scripts/verify_fw_download.py           # dry-run
-python scripts/verify_fw_download.py --burn    # 真实烧录
+# === 命令行验证 ===
+python scripts/run_all.py                # 全模块验证 (固件下载 dry-run)
+python scripts/run_all.py --burn         # 全模块验证 (固件下载真实烧录)
+python scripts/verify_relay.py           # 单独验证继电器
+python scripts/verify_device.py          # 单独验证设备出图
+python scripts/verify_i2c.py             # 单独验证 I2C
+python scripts/verify_fw_download.py     # 固件下载 dry-run (--burn 真实烧录)
 ```
+
+## 拖拽式工具节点一览 (28 种)
+
+| 分组 | 节点 |
+|---|---|
+| 电源 | 继电器上电 / 断电 / 掉电重启(15s) |
+| 设备 | 下发 ini 配置 / 打开视频流 / 抓帧存图 / 读 FPS / 读 DN / 关闭视频流 |
+| I2C | 读寄存器 / 写寄存器 / 写后回读校验 / 批量读寄存器（位宽模式 A1D1~A4D4 任选） |
+| 图像 | 抓帧测亮度 / 寄存器改值前后亮度对比（自动恢复原值） |
+| 固件 | 一键下载(需勾选确认) / SOC 重启 / 擦除扇区 / Flash CRC |
+| 检查 | 固件版本 / 启动状态 / 帧计数器 / AWB·AE 开关 / 功能安全 / 时钟切换 |
+| 流程 | 延时 / 打印日志 / 数值断言（(值&掩码)>>位移 与期望比较） |
+
+- **画布 = case**: 新建画布即新建用例, 不同 case 只是流程与参数不同
+- **自由连线**: 节点输出圆点拖到输入圆点即形成数据流 (如 i2c.read 的 value → 断言的 value), 连线值优先于节点参数
+- **运行报告**: 每个节点显示 通过/失败/跳过 与输出值; 失败即停可勾选
+- **代码固化**: 「生成代码」输出与画布同语义的 Python 脚本, 进版本库即可做回归
 
 ## 模块用法速览
 

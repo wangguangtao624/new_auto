@@ -1,0 +1,85 @@
+{
+  "name": "demo_上电读版本出图",
+  "stop_on_fail": true,
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "relay.on",
+      "x": 60,
+      "y": 40,
+      "params": {
+        "channel": 0
+      }
+    },
+    {
+      "id": "n2",
+      "type": "device.configure",
+      "x": 60,
+      "y": 170,
+      "params": {}
+    },
+    {
+      "id": "n3",
+      "type": "i2c.read",
+      "x": 60,
+      "y": 300,
+      "params": {
+        "slave": "0x40",
+        "addr": "0x00d8",
+        "mode": "A2D4"
+      }
+    },
+    {
+      "id": "n4",
+      "type": "flow.assert_value",
+      "x": 380,
+      "y": 300,
+      "params": {
+        "mask": "0x00FF0000",
+        "shift": 16,
+        "op": ">=",
+        "expected": "0x4"
+      }
+    },
+    {
+      "id": "n5",
+      "type": "device.open_video",
+      "x": 60,
+      "y": 430,
+      "params": {}
+    },
+    {
+      "id": "n6",
+      "type": "device.grab_save",
+      "x": 380,
+      "y": 430,
+      "params": {
+        "name": "demo"
+      }
+    },
+    {
+      "id": "n7",
+      "type": "device.fps",
+      "x": 680,
+      "y": 430,
+      "params": {}
+    },
+    {
+      "id": "n8",
+      "type": "relay.off",
+      "x": 680,
+      "y": 560,
+      "params": {
+        "channel": 0
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "n3",
+      "fromPort": "value",
+      "to": "n4",
+      "toParam": "value"
+    }
+  ]
+}
