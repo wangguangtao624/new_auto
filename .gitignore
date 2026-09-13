@@ -1,0 +1,13 @@
+# 运行产物
+logs/
+__pycache__/
+*.pyc
+
+# DLL 运行时(体积大, 走发布包/部署脚本, 不进 git)
+bin/*.dll
+
+# 编辑器
+.vscode/
+.idea/
+# 工具数据
+.ua/

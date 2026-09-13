@@ -1,0 +1,52 @@
+{
+  "relay": {
+    "port": "COM3",
+    "channel": 0,
+    "power_cycle_off_seconds": 15
+  },
+  "device": {
+    "chip": "MAT130YV200",
+    "deserializer": "MAX96712",
+    "init_file": "MAT130YV200_max96712_max96701_yuv422_1280x960_30fps_bt601_v1.0.6_1280_880.ini",
+    "configure_wait_seconds": 10,
+    "output_width": 1280,
+    "output_height": 880,
+    "output_format": "uyvy",
+    "frame": 25
+  },
+  "i2c": {
+    "default_slave": "0x40",
+    "regs": {
+      "fw_version": "0x00d8",
+      "boot_rom_info": "0x00c0",
+      "boot_sram_info": "0x00c4",
+      "frame_counter": "0x00cc",
+      "awb_enable": "0x0918",
+      "ae_enable": "0x091c",
+      "fs_report_1": "0x093c",
+      "fs_report_2": "0x0940"
+    }
+  },
+  "firmware": {
+    "fw_dir": "fw",
+    "sector_size": 4096,
+    "fw_area": {
+      "A": {
+        "start": 0,
+        "end": 63,
+        "address": 0
+      },
+      "B": {
+        "start": 32,
+        "end": 63,
+        "address": 131072
+      },
+      "config": {
+        "start": 64,
+        "end": 112,
+        "address": 262144
+      }
+    },
+    "fw_file": "MAT130A_JUNGE-A21-JZ9173-SUB_DVP_24M_78M_1280x880@25fps_YUV422_0022_v4.1.7_C0101.bin"
+  }
+}
