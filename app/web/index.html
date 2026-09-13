@@ -19,23 +19,31 @@
   <button id="btn-save">💾 保存画布</button>
   <button id="btn-run" class="primary">▶ 运行</button>
   <button id="btn-gencode">⇩ 生成代码</button>
+  <button id="btn-help" title="连线与操作说明">❓ 帮助</button>
   <span id="status" class="status"></span>
 </div>
 
 <div id="main">
   <div id="palette">
-    <div class="pal-title">节点面板（拖到画布）</div>
+    <div class="pal-title">模块面板（拖入画布 / 双击添加）</div>
     <div id="palette-groups"></div>
   </div>
 
   <div id="canvas-wrap">
-    <svg id="wires"></svg>
-    <div id="canvas"></div>
+    <div id="world">
+      <svg id="wires"></svg>
+    </div>
+    <div id="zoombar">
+      <button id="zoom-out" title="缩小">－</button>
+      <span id="zoom-val">100%</span>
+      <button id="zoom-in" title="放大">＋</button>
+      <button id="zoom-fit" title="内容居中">⛶</button>
+    </div>
   </div>
 
   <div id="inspector">
-    <div class="ins-title">属性</div>
-    <div id="ins-body" class="ins-empty">点击节点编辑参数<br>拖动输出圆点 → 输入圆点连线</div>
+    <div class="ins-title">属性 / 调试</div>
+    <div id="ins-body" class="ins-empty">点击节点编辑参数</div>
   </div>
 </div>
 
@@ -45,6 +53,24 @@
     <button onclick="document.getElementById('runlog').classList.add('hidden')">✕</button>
   </div>
   <div id="runlog-body"></div>
+</div>
+
+<div id="help-overlay" class="hidden">
+  <div id="help-box">
+    <div class="runlog-head"><b>操作与连线说明</b>
+      <button onclick="document.getElementById('help-overlay').classList.add('hidden')">✕</button></div>
+    <div class="help-body">
+      <p><b>添加节点</b>：左侧面板拖入画布（或双击面板项）；也可以在画布<b>空白处右键</b> → 选节点。</p>
+      <p><b>连线（两种方式）</b>：<br>
+        ① 拖线：按住端口圆点拖到目标端口松手（会自动吸附最近的兼容端口）；<br>
+        ② 点两下：先<b>点一下</b>起点端口（兼容端口会呼吸高亮），再<b>点一下</b>目标端口即完成。<br>
+        金色方块端口 = <b>执行流</b>（定执行顺序，上游→下游）；蓝色圆点端口 = <b>数据传值</b>（如 I2C 读到的值 → 断言的值）。金连金、蓝连蓝。</p>
+      <p><b>删连线</b>：点击连线本身。<b>删节点</b>：选中后按 Delete。</p>
+      <p><b>平移/缩放</b>：空白处按住拖动 = 平移；滚轮 = 以鼠标为中心缩放；右下角 ＋/－/⛶ 缩放与内容居中。</p>
+      <p><b>单步调试</b>：节点标题栏 ▶ 只运行该节点；选中节点后右侧还有专属调试动作（如继电器扫描串口、测试通道响应）。</p>
+      <p><b>跨画布复用</b>：选中节点 Ctrl+C 复制，切到其它画布 Ctrl+V 粘贴（每个画布是独立 case，画布之间不能直接连线）。</p>
+    </div>
+  </div>
 </div>
 
 <script src="/web/app.js"></script>

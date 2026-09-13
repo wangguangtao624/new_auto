@@ -49,12 +49,26 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .pal-item b { display: block; font-size: 12.5px; }
 .pal-item span { color: var(--dim); font-size: 11px; }
 
-#canvas-wrap { flex: 1; position: relative; overflow: auto;
+#canvas-wrap {
+  flex: 1; position: relative; overflow: hidden; cursor: default;
   background-image: radial-gradient(circle, #232a34 1px, transparent 1px);
-  background-size: 22px 22px; }
-#wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
-#wires path { pointer-events: stroke; cursor: pointer; }
-#canvas { position: relative; width: 2400px; height: 1600px; }
+  background-size: 22px 22px;
+}
+#canvas-wrap.panning { cursor: grabbing; }
+#world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+#wires { position: absolute; left: 0; top: 0; width: 1px; height: 1px;
+  overflow: visible; pointer-events: none; }
+#wires path.edge { pointer-events: stroke; cursor: pointer; }
+#wires path.edge:hover { stroke-width: 4 !important; }
+
+/* 缩放工具条 */
+#zoombar {
+  position: absolute; left: 12px; bottom: 12px; display: flex; gap: 4px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 4px 6px; align-items: center; z-index: 10;
+}
+#zoombar button { width: 28px; padding: 2px 0; }
+#zoom-val { color: var(--dim); font-size: 11.5px; min-width: 40px; text-align: center; }
 
 /* ---------- 节点 ---------- */
 .node {
@@ -85,15 +99,19 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 
 /* 执行流端口 (金色方块, 顶部两角) 与数据端口 (蓝色圆点, 两侧) */
 .flow-in, .flow-out {
-  position: absolute; width: 12px; height: 12px; background: var(--panel);
+  position: absolute; width: 13px; height: 13px; background: var(--panel);
   border: 2px solid #e8b339; transform: rotate(45deg); cursor: crosshair; z-index: 3;
 }
-.flow-in:hover, .flow-out:hover { background: #e8b339; }
-.port { position: absolute; width: 11px; height: 11px; border-radius: 50%;
+.flow-in:hover, .flow-out:hover, .flow-in.pulse, .flow-out.pulse { background: #e8b339; }
+.port { position: absolute; width: 12px; height: 12px; border-radius: 50%;
   background: var(--panel2); border: 2px solid var(--accent); cursor: crosshair; z-index: 3; }
 .port.out { right: -7px; }
 .port.in { left: -7px; }
-.port:hover { background: var(--accent); }
+.port:hover, .port.pulse { background: var(--accent); }
+/* 扩大点击热区 (视觉不变) */
+.port::after, .flow-in::after, .flow-out::after {
+  content: ""; position: absolute; inset: -8px; border-radius: 50%;
+}
 .pl {
   position: absolute; white-space: nowrap; font-size: 9.5px;
   color: var(--dim); top: -2px; pointer-events: none;
@@ -101,8 +119,22 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .port.out .pl, .flow-out .pl { left: 14px; }
 .port.in .pl, .flow-in .pl { right: 14px; }
 
-#wires path.edge { pointer-events: stroke; cursor: pointer; }
-#wires path.edge:hover { stroke-width: 4 !important; }
+/* 连线辅助: 武装时兼容端口呼吸, 吸附目标放大发亮 */
+@keyframes portPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232,179,57,.0); transform: rotate(45deg) scale(1); }
+  50% { box-shadow: 0 0 0 5px rgba(232,179,57,.35); transform: rotate(45deg) scale(1.25); }
+}
+@keyframes portPulseRound {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(74,137,220,.0); transform: scale(1); }
+  50% { box-shadow: 0 0 0 5px rgba(74,137,220,.4); transform: scale(1.25); }
+}
+.flow-in.pulse, .flow-out.pulse { animation: portPulse 1s infinite; }
+.port.in.pulse, .port.out.pulse { animation: portPulseRound 1s infinite; }
+.port.snap, .flow-in.snap, .flow-out.snap {
+  background: var(--ok) !important; border-color: var(--ok) !important;
+  transform: scale(1.5);
+}
+.flow-in.snap, .flow-out.snap { transform: rotate(45deg) scale(1.5); }
 
 /* ---------- 属性面板 ---------- */
 #inspector {
@@ -146,10 +178,6 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   opacity: .85;
 }
 
-/* ---------- 画布平移 ---------- */
-#canvas-wrap.panning { cursor: grabbing; }
-#canvas-wrap { cursor: default; }
-
 /* ---------- 右键新建节点菜单 ---------- */
 #ctx-menu {
   position: fixed; z-index: 200; width: 200px; max-height: 70vh; overflow-y: auto;
@@ -177,3 +205,18 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .dbg-result.ok { color: var(--fg); }
 .dbg-result.err { color: var(--err); }
 a.refresh-ports { color: var(--accent); font-size: 11px; }
+
+/* ---------- 帮助弹窗 ---------- */
+#help-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 300;
+  display: flex; align-items: center; justify-content: center;
+}
+#help-overlay.hidden { display: none; }
+#help-box {
+  width: 640px; max-height: 80vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 14px 44px rgba(0,0,0,.6);
+}
+.help-body { padding: 14px 18px; font-size: 12.5px; line-height: 1.8; }
+.help-body b { color: var(--accent); }
+.help-body p { margin-bottom: 10px; }

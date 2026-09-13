@@ -107,7 +107,7 @@ def _relay_port(params):
     return (params.get("port") or "").strip() or None
 
 
-@node("relay.on", "电源", "继电器上电", "导通指定通道, 给模组上电", "#e8b339",
+@node("relay.on", "电源模块", "继电器上电", "导通指定通道, 给模组上电", "#e8b339",
       params=[_RELAY_PORT_PARAM,
               {"name": "channel", "label": "通道", "type": "int", "default": 0}],
       outputs={"ok": "是否成功"},
@@ -135,7 +135,7 @@ def _dbg_probe(ctx, params):
             f"{'继电器响应正常' if ok else '存在失败项, 请检查接线/串口'}"}
 
 
-@node("relay.off", "电源", "继电器断电", "断开指定通道, 模组掉电", "#e8b339",
+@node("relay.off", "电源模块", "继电器断电", "断开指定通道, 模组掉电", "#e8b339",
       params=[_RELAY_PORT_PARAM,
               {"name": "channel", "label": "通道", "type": "int", "default": 0}],
       outputs={"ok": "是否成功"},
@@ -145,7 +145,7 @@ def _relay_off(ctx, params, inputs):
     return {"ok": True}
 
 
-@node("relay.power_cycle", "电源", "掉电重启", "断电保持 -> 重新上电 (规范 15s)", "#e8b339",
+@node("relay.power_cycle", "电源模块", "掉电重启", "断电保持 -> 重新上电 (规范 15s)", "#e8b339",
       params=[_RELAY_PORT_PARAM,
               {"name": "off_seconds", "label": "断电时长(s)", "type": "float", "default": 15}],
       outputs={"ok": "是否成功"},
@@ -185,7 +185,7 @@ def _dbg_scan3(ctx, params):
 
 # ============================ 设备 ============================
 
-@node("device.configure", "设备", "下发 ini 配置", "setConfigure 上电初始化文件并打开设备", "#4a89dc",
+@node("device.configure", "设备模块", "下发 ini 配置", "setConfigure 上电初始化文件并打开设备", "#4a89dc",
       params=[{"name": "ini", "label": "ini 文件", "type": "choice",
                "default": None, "options": _ini_options(), "optional": True}],
       outputs={"ok": "是否成功"})
@@ -198,14 +198,14 @@ def _dev_configure(ctx, params, inputs):
     return {"ok": dev is not None}
 
 
-@node("device.open_video", "设备", "打开视频流", "device_open_video", "#4a89dc",
+@node("device.open_video", "设备模块", "打开视频流", "device_open_video", "#4a89dc",
       outputs={"ok": "是否成功"})
 def _dev_video(ctx, params, inputs):
     ctx.ensure_video()
     return {"ok": True}
 
 
-@node("device.grab_save", "设备", "抓帧存图", "抓一帧并保存到输出目录", "#4a89dc",
+@node("device.grab_save", "设备模块", "抓帧存图", "抓一帧并保存到输出目录", "#4a89dc",
       params=[{"name": "name", "label": "文件名前缀", "type": "str", "default": "case_frame"}],
       inputs={"prefix": "文件名前缀(可由上游传入)"},
       outputs={"ok": "是否成功", "path": "图片路径"})
@@ -218,21 +218,21 @@ def _dev_grab(ctx, params, inputs):
     return {"ok": True, "path": str(path)}
 
 
-@node("device.fps", "设备", "读取 FPS", "device_get_fps", "#4a89dc",
+@node("device.fps", "设备模块", "读取 FPS", "device_get_fps", "#4a89dc",
       outputs={"fps": "帧率"})
 def _dev_fps(ctx, params, inputs):
     dev = ctx.ensure_video()
     return {"fps": round(dev.get_fps(), 2)}
 
 
-@node("device.dn", "设备", "读取 DN 亮度", "device_get_current_DN", "#4a89dc",
+@node("device.dn", "设备模块", "读取 DN 亮度", "device_get_current_DN", "#4a89dc",
       outputs={"dn": "DN 值"})
 def _dev_dn(ctx, params, inputs):
     dev = ctx.ensure_video()
     return {"dn": round(dev.get_dn(), 2)}
 
 
-@node("device.close_video", "设备", "关闭视频流", "device_close_video", "#4a89dc",
+@node("device.close_video", "设备模块", "关闭视频流", "device_close_video", "#4a89dc",
       outputs={"ok": "是否成功"})
 def _dev_close_video(ctx, params, inputs):
     if ctx._video_on:
@@ -246,7 +246,7 @@ def _dev_close_video(ctx, params, inputs):
 _I2C_MODE_OPTS = ["A1D1", "A1D2", "A1D4", "A2D1", "A2D2", "A2D4", "A4D1", "A4D2", "A4D4"]
 
 
-@node("i2c.rw", "I2C", "I2C 读写模块", "读/写/写并校验 一体的 I2C 模块, 位宽 A1D1~A4D4 任选", "#3faf6e",
+@node("i2c.rw", "FMC 模块", "I2C 读写模块", "读/写/写并校验 一体的 I2C 模块, 位宽 A1D1~A4D4 任选", "#3faf6e",
       params=[
           {"name": "op", "label": "操作", "type": "choice", "default": "read",
            "options": [{"v": "read", "l": "读寄存器"},
@@ -289,7 +289,7 @@ def _i2c_rw(ctx, params, inputs):
     return {"ok": True, "value": value, "readback": readback, "match": True}
 
 
-@node("i2c.read", "I2C", "读寄存器(单)", "device_I2C_Read", "#3faf6e",
+@node("i2c.read", "FMC 模块", "读寄存器(单)", "device_I2C_Read", "#3faf6e",
       params=[
           {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
           {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x00d8", "hex": True},
@@ -308,7 +308,7 @@ def _i2c_read(ctx, params, inputs):
     return {"ok": True, "value": value}
 
 
-@node("i2c.write", "I2C", "写寄存器", "device_I2C_Write, 支持 A2D2/A2D4/A4D4 等位宽", "#3faf6e",
+@node("i2c.write", "FMC 模块", "写寄存器", "device_I2C_Write, 支持 A2D2/A2D4/A4D4 等位宽", "#3faf6e",
       params=[
           {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
           {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x0918", "hex": True},
@@ -329,7 +329,7 @@ def _i2c_write(ctx, params, inputs):
     return {"ok": True}
 
 
-@node("i2c.write_readback", "I2C", "写后回读校验", "写寄存器后回读, 比对是否一致", "#3faf6e",
+@node("i2c.write_readback", "FMC 模块", "写后回读校验", "写寄存器后回读, 比对是否一致", "#3faf6e",
       params=[
           {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
           {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x0918", "hex": True},
@@ -350,7 +350,7 @@ def _i2c_wrb(ctx, params, inputs):
     return {"ok": True, "readback": readback, "match": bool(match)}
 
 
-@node("i2c.read_regs", "I2C", "批量读寄存器", "按逗号分隔的地址列表连续读取", "#3faf6e",
+@node("i2c.read_regs", "FMC 模块", "批量读寄存器", "按逗号分隔的地址列表连续读取", "#3faf6e",
       params=[
           {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
           {"name": "addrs", "label": "地址列表(逗号分隔)", "type": "str", "default": "0x00d8,0x00c0,0x00c4"},
@@ -375,7 +375,7 @@ def _i2c_reads(ctx, params, inputs):
 _FMT_OPTS = ["uyvy", "yuyv", "yvyu", "vyuy"]
 
 
-@node("image.capture_mean", "图像", "抓帧测亮度", "抓一帧并计算 Y 分量均值", "#9b59b6",
+@node("image.capture_mean", "检查模块", "抓帧测亮度", "抓一帧并计算 Y 分量均值", "#9b59b6",
       params=[{"name": "name", "label": "文件名前缀", "type": "str", "default": "img"}],
       outputs={"ok": "是否成功", "mean": "亮度均值", "path": "图片路径"})
 def _img_mean(ctx, params, inputs):
@@ -386,7 +386,7 @@ def _img_mean(ctx, params, inputs):
     return {"ok": True, "mean": round(mean, 2), "path": str(path)}
 
 
-@node("image.compare_register", "图像", "寄存器改值前后亮度对比",
+@node("image.compare_register", "检查模块", "寄存器改值前后亮度对比",
       "改寄存器前后各抓一帧对比亮度, 验证寄存器是否生效 (自动恢复原值)", "#9b59b6",
       params=[
           {"name": "reg", "label": "寄存器地址", "type": "str", "default": "0x0091c", "hex": True},
@@ -414,7 +414,7 @@ def _img_compare(ctx, params, inputs):
 
 # ============================ 固件 ============================
 
-@node("fw.download", "固件", "一键固件下载", "MatFwDownload 烧录固件 (需勾选确认)", "#e07b39",
+@node("fw.download", "固件模块", "一键固件下载", "MatFwDownload 烧录固件 (需勾选确认)", "#e07b39",
       params=[
           {"name": "ini", "label": "ini 文件", "type": "choice", "default": None,
            "options": _ini_options(), "optional": True},
@@ -443,7 +443,7 @@ def _fw_download(ctx, params, inputs):
     return {"ok": True}
 
 
-@node("fw.soc_reboot", "固件", "SOC 重启", "firmware_socReboot", "#e07b39",
+@node("fw.soc_reboot", "固件模块", "SOC 重启", "firmware_socReboot", "#e07b39",
       outputs={"ok": "是否成功"})
 def _fw_reboot(ctx, params, inputs):
     from modules.firmware import FirmwareFlasher
@@ -455,7 +455,7 @@ def _fw_reboot(ctx, params, inputs):
     return {"ok": True}
 
 
-@node("fw.erase", "固件", "擦除 Flash 扇区", "firmware_erase_flash (扇区号区间)", "#e07b39",
+@node("fw.erase", "固件模块", "擦除 Flash 扇区", "firmware_erase_flash (扇区号区间)", "#e07b39",
       params=[
           {"name": "start", "label": "起始扇区", "type": "int", "default": 0},
           {"name": "end", "label": "结束扇区", "type": "int", "default": 63},
@@ -470,7 +470,7 @@ def _fw_erase(ctx, params, inputs):
     return {"ok": True}
 
 
-@node("fw.crc_check", "固件", "Flash CRC 校验", "firmware_flash_crc_check", "#e07b39",
+@node("fw.crc_check", "固件模块", "Flash CRC 校验", "firmware_flash_crc_check", "#e07b39",
       params=[
           {"name": "start", "label": "起始扇区", "type": "int", "default": 0},
           {"name": "end", "label": "结束扇区", "type": "int", "default": 63},
@@ -488,7 +488,7 @@ def _fw_crc(ctx, params, inputs):
 
 # ============================ 检查 ============================
 
-@node("checks.fw_version", "检查", "读固件版本", "0x00d8 (A2D4)", "#5d8aa8",
+@node("checks.fw_version", "检查模块", "读固件版本", "0x00d8 (A2D4)", "#5d8aa8",
       outputs={"ok": "是否成功", "version": "版本号"})
 def _chk_version(ctx, params, inputs):
     from modules.checks import fw_version
@@ -498,7 +498,7 @@ def _chk_version(ctx, params, inputs):
     return {"ok": True, "version": ver}
 
 
-@node("checks.start_status", "检查", "启动状态检查", "ROM/SRAM 启动信息与启动区", "#5d8aa8",
+@node("checks.start_status", "检查模块", "启动状态检查", "ROM/SRAM 启动信息与启动区", "#5d8aa8",
       outputs={"ok": "是否成功", "area": "启动区", "desc": "描述"})
 def _chk_boot(ctx, params, inputs):
     from modules.checks import start_status
@@ -510,7 +510,7 @@ def _chk_boot(ctx, params, inputs):
     return {"ok": True, "area": st["area"], "desc": st["desc"]}
 
 
-@node("checks.frame_counter", "检查", "帧计数器检查", "间隔采样 0x00cc 是否递增", "#5d8aa8",
+@node("checks.frame_counter", "检查模块", "帧计数器检查", "间隔采样 0x00cc 是否递增", "#5d8aa8",
       params=[{"name": "interval", "label": "采样间隔(s)", "type": "float", "default": 2}],
       outputs={"ok": "是否成功", "counting": "是否递增"})
 def _chk_cnt(ctx, params, inputs):
@@ -523,7 +523,7 @@ def _chk_cnt(ctx, params, inputs):
     return {"ok": True, "counting": True}
 
 
-@node("checks.alg_ctrl", "检查", "AWB/AE 算法开关", "0x0918/0x091c (A2D2)", "#5d8aa8",
+@node("checks.alg_ctrl", "检查模块", "AWB/AE 算法开关", "0x0918/0x091c (A2D2)", "#5d8aa8",
       params=[
           {"name": "awb", "label": "AWB", "type": "choice", "default": "on",
            "options": ["on", "off"]},
@@ -541,7 +541,7 @@ def _chk_alg(ctx, params, inputs):
     return {"ok": True}
 
 
-@node("checks.fs_check", "检查", "功能安全检查", "0x093c/0x0940 位定义表", "#5d8aa8",
+@node("checks.fs_check", "检查模块", "功能安全检查", "0x093c/0x0940 位定义表", "#5d8aa8",
       outputs={"ok": "是否成功", "errors": "错误列表 JSON"})
 def _chk_fs(ctx, params, inputs):
     from modules.checks import fs_check
@@ -553,7 +553,7 @@ def _chk_fs(ctx, params, inputs):
     return {"ok": True, "errors": []}
 
 
-@node("checks.switch_clock", "检查", "时钟切换", "0x80 器件 0x04 (A1D1), 升级前开时钟", "#5d8aa8",
+@node("checks.switch_clock", "检查模块", "时钟切换", "0x80 器件 0x04 (A1D1), 升级前开时钟", "#5d8aa8",
       params=[{"name": "on", "label": "开关", "type": "choice", "default": "on",
                "options": ["on", "off"]}],
       outputs={"ok": "是否成功"})
@@ -566,14 +566,14 @@ def _chk_clk(ctx, params, inputs):
 
 # ============================ 流程 ============================
 
-@node("flow.reroute", "流程", "转接点", "理线用: 数据/执行流可在此中转, 保持连线整洁", "#777777",
+@node("flow.reroute", "流程工具", "转接点", "理线用: 数据/执行流可在此中转, 保持连线整洁", "#777777",
       inputs={"in": "输入"},
       outputs={"out": "输出"})
 def _flow_reroute(ctx, params, inputs):
     return {"out": inputs.get("in")}
 
 
-@node("flow.delay", "流程", "延时", "等待指定秒数", "#888888",
+@node("flow.delay", "流程工具", "延时", "等待指定秒数", "#888888",
       params=[{"name": "seconds", "label": "秒", "type": "float", "default": 3}],
       outputs={"ok": "完成"})
 def _flow_delay(ctx, params, inputs):
@@ -581,7 +581,7 @@ def _flow_delay(ctx, params, inputs):
     return {"ok": True}
 
 
-@node("flow.log", "流程", "打印日志", "输出一条信息到运行日志", "#888888",
+@node("flow.log", "流程工具", "打印日志", "输出一条信息到运行日志", "#888888",
       params=[{"name": "message", "label": "内容", "type": "str", "default": "hello"}],
       outputs={"ok": "完成", "message": "内容"})
 def _flow_log(ctx, params, inputs):
@@ -590,7 +590,7 @@ def _flow_log(ctx, params, inputs):
     return {"ok": True, "message": msg}
 
 
-@node("flow.assert_value", "流程", "数值断言", "对上游值做 (值 & 掩码) >> 位移 <op> 期望 断言", "#c0504d",
+@node("flow.assert_value", "流程工具", "数值断言", "对上游值做 (值 & 掩码) >> 位移 <op> 期望 断言", "#c0504d",
       params=[
           {"name": "mask", "label": "掩码", "type": "str", "default": "0xFFFFFFFF", "hex": True},
           {"name": "shift", "label": "右移位数", "type": "int", "default": 0},

@@ -1,17 +1,25 @@
 /* new_auto 拖拽式流程画布 (原生 JS + SVG, 无构建依赖)
- * v1.0.3: 空白拖拽平移 / 执行流端口(上下游) / 右键新建节点 / 节点单步调试 */
+ * v1.0.4: 无限画布(平移/缩放/居中) + 连线状态机(点击连接/拖线吸附/兼容高亮)
+ *         + 四大模块分组 + 跨画布复制粘贴 */
 "use strict";
 
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 
 let REG = [];              // 节点注册表
-let canvas = null;         // 当前画布
+let canvas = null;         // 当前画布 {name, stop_on_fail, nodes, edges, view}
 let selected = null;       // 选中节点 id
-let pendingConn = null;    // 正在拖的连线 {kind, node, port}
 let COM_PORTS = [];        // 本机串口列表
 
-const CANVAS_W = 3000, CANVAS_H = 2000;
+/* 无限画布视图: 世界坐标 -> 屏幕 = pan + world*z */
+const view = { x: 0, y: 0, z: 1 };
+const ZOOM_MIN = 0.3, ZOOM_MAX = 2.5;
+
+/* 连线状态机: null | {kind, dir:'out'|'in', node, port, moved, armed} */
+let conn = null;
+let clipboard = null;
+
+const GROUP_ORDER = ["电源模块", "设备模块", "FMC 模块", "检查模块", "固件模块", "流程工具"];
 const FLOW_IN = "__in", FLOW_OUT = "__out";
 
 /* ---------------- API ---------------- */
@@ -33,9 +41,45 @@ function setStatus(msg, cls) {
 }
 function uid() { return "n" + Math.random().toString(36).slice(2, 7); }
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-function optLabel(p, v) {
-  const o = (p.options || []).find((o) => (o.v ?? o) === v);
-  return typeof o === "object" ? o.l : v;
+
+/* ---------------- 视图 (平移/缩放/居中) ---------------- */
+function applyView() {
+  $("#world").style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.z})`;
+  $("#zoom-val").textContent = Math.round(view.z * 100) + "%";
+}
+function toWorld(cx, cy) {
+  const r = $("#canvas-wrap").getBoundingClientRect();
+  return { x: (cx - r.left - view.x) / view.z, y: (cy - r.top - view.y) / view.z };
+}
+function zoomAt(cx, cy, factor) {
+  const nz = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, view.z * factor));
+  if (nz === view.z) return;
+  const r = $("#canvas-wrap").getBoundingClientRect();
+  const mx = cx - r.left, my = cy - r.top;
+  view.x = mx - (mx - view.x) * (nz / view.z);
+  view.y = my - (my - view.y) * (nz / view.z);
+  view.z = nz;
+  applyView();
+}
+function fitView() {
+  const wrap = $("#canvas-wrap");
+  if (!canvas?.nodes?.length) {
+    view.x = wrap.clientWidth / 2 - 90; view.y = wrap.clientHeight / 2 - 40; view.z = 1;
+    applyView(); return;
+  }
+  let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+  for (const n of canvas.nodes) {
+    minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+    maxX = Math.max(maxX, n.x + nodeW(n)); maxY = Math.max(maxY, n.y + nodeH(n));
+  }
+  const pad = 70;
+  const z = Math.min(ZOOM_MAX,
+    Math.min((wrap.clientWidth - pad * 2) / Math.max(1, maxX - minX),
+             (wrap.clientHeight - pad * 2) / Math.max(1, maxY - minY), 1.25));
+  view.z = Math.max(ZOOM_MIN, z);
+  view.x = wrap.clientWidth / 2 - ((minX + maxX) / 2) * view.z;
+  view.y = wrap.clientHeight / 2 - ((minY + maxY) / 2) * view.z;
+  applyView();
 }
 
 /* ---------------- 面板 ---------------- */
@@ -44,7 +88,10 @@ function renderPalette() {
   REG.forEach((n) => (groups[n.group] ||= []).push(n));
   const root = $("#palette-groups");
   root.innerHTML = "";
-  for (const [g, items] of Object.entries(groups)) {
+  const order = [...GROUP_ORDER, ...Object.keys(groups).filter((g) => !GROUP_ORDER.includes(g))];
+  for (const g of order) {
+    const items = groups[g];
+    if (!items) continue;
     const div = document.createElement("div");
     div.className = "pal-group";
     div.innerHTML = `<div class="pal-group-name">${esc(g)}</div>`;
@@ -62,10 +109,11 @@ function renderPalette() {
         document.addEventListener("mousemove", mv);
         el.addEventListener("dragend", () => { ghost.remove(); document.removeEventListener("mousemove", mv); }, { once: true });
       });
-      // 双击面板项: 直接放到画布可视区中心
       el.addEventListener("dblclick", () => {
-        const w = $("#canvas-wrap");
-        addNodeAt(it.type, w.scrollLeft + 200, w.scrollTop + 120);
+        const wrap = $("#canvas-wrap");
+        const p = toWorld(wrap.getBoundingClientRect().left + wrap.clientWidth / 2,
+                          wrap.getBoundingClientRect().top + wrap.clientHeight / 2);
+        addNodeAt(it.type, Math.round(p.x - 80), Math.round(p.y - 20));
       });
       div.appendChild(el);
     }
@@ -80,7 +128,6 @@ function nodeH(node) {
   const n = Math.max(Object.keys(s.outputs).length, Object.keys(s.inputs).length, 1);
   return 56 + n * 17 + (s.debug?.length ? 8 : 0);
 }
-/* 数据端口位置 (执行流端口固定在顶部两角) */
 function portPos(node, kind, name) {
   const s = spec(node.type);
   const list = kind === "out" ? Object.keys(s.outputs) : Object.keys(s.inputs);
@@ -93,20 +140,14 @@ const flowPos = (node, kind) => ({
   y: node.y,
 });
 
-/* ---------------- 画布渲染 ---------------- */
+/* ---------------- 画布渲染 (世界坐标) ---------------- */
 function renderAll() {
-  const c = $("#canvas");
-  c.innerHTML = "";
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.id = "wires";
-  svg.setAttribute("width", CANVAS_W); svg.setAttribute("height", CANVAS_H);
-  svg.innerHTML = `<defs><marker id="arrow-flow" viewBox="0 0 10 10" refX="9" refY="5"
-      markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#e8b339"/></marker></defs>`;
-  c.appendChild(svg);
+  const w = $("#world");
+  [...w.querySelectorAll(".node")].forEach((n) => n.remove());
   canvas.nodes.forEach(renderNode);
   drawWires();
   if (selected) selectNode(selected, true);
+  applyView();
 }
 
 function renderNode(node) {
@@ -127,35 +168,33 @@ function renderNode(node) {
   $(".node-run", el).addEventListener("mousedown", (e) => e.stopPropagation());
   $(".node-run", el).addEventListener("click", (e) => { e.stopPropagation(); runSingleNode(node); });
 
-  // 执行流端口 (顶部两角, 方块金色) —— 明确上下游
-  const fin = mkPort(el, "flow-in", "入", "执行流入 (上游 →)");
-  fin.style.left = "-7px"; fin.style.top = "-5px";
-  fin.dataset.node = node.id;
-  fin.addEventListener("mouseup", finishConn);
-  fin.addEventListener("mousedown", (e) => e.stopPropagation());
-  const fout = mkPort(el, "flow-out", "出", "执行流出 (→ 下游)");
-  fout.style.right = "-7px"; fout.style.top = "-5px";
-  fout.dataset.node = node.id;
-  fout.addEventListener("mousedown", startConn);
+  // 执行流端口 (顶部两角, 金色方块)
+  const fin = mkPort(el, "flow-in", "入", "执行流入 —— 点它连接上游");
+  fin.style.left = "-7px"; fin.style.top = "-6px";
+  fin.dataset.node = node.id; fin.dataset.flow = "in";
+  const fout = mkPort(el, "flow-out", "出", "执行流出 —— 按住/点它连到下游");
+  fout.style.right = "-7px"; fout.style.top = "-6px";
+  fout.dataset.node = node.id; fout.dataset.flow = "out";
+  fin.addEventListener("mousedown", (e) => startConn(e, "in"));
+  fout.addEventListener("mousedown", (e) => startConn(e, "out"));
 
-  // 数据端口
+  // 数据端口 (两侧蓝色圆点)
   Object.keys(s.outputs).forEach((port, i, arr) => {
     const p = mkPort(el, "port out", s.outputs[port]);
-    p.dataset.node = node.id; p.dataset.port = port;
+    p.dataset.node = node.id; p.dataset.port = port; p.dataset.dir = "out";
     p.style.top = (52 + ((i + 1) / (arr.length + 1)) * Math.max(30, nodeH(node) - 66)) + "px";
-    p.addEventListener("mousedown", startConn);
+    p.addEventListener("mousedown", (e) => startConn(e, "out"));
   });
   Object.keys(s.inputs).forEach((param, i, arr) => {
     const p = mkPort(el, "port in", s.inputs[param]);
-    p.dataset.node = node.id; p.dataset.param = param;
+    p.dataset.node = node.id; p.dataset.port = param; p.dataset.dir = "in";
     p.style.top = (52 + ((i + 1) / (arr.length + 1)) * Math.max(30, nodeH(node) - 66)) + "px";
-    p.addEventListener("mouseup", finishConn);
-    p.addEventListener("mousedown", (e) => e.stopPropagation());
+    p.addEventListener("mousedown", (e) => startConn(e, "in"));
   });
 
   $(".node-head", el).addEventListener("mousedown", (e) => startMove(e, node, el));
   el.addEventListener("mousedown", () => selectNode(node.id));
-  $("#canvas").appendChild(el);
+  $("#world").appendChild(el);
 }
 function mkPort(el, cls, label, tip) {
   const p = document.createElement("div");
@@ -182,8 +221,6 @@ function drawWires(tempLine) {
     }
     p.setAttribute("fill", "none"); p.classList.add("edge");
     if (edge) {
-      p.dataset.from = edge.from; p.dataset.fromPort = edge.fromPort;
-      p.dataset.to = edge.to; p.dataset.toParam = edge.toParam;
       p.addEventListener("click", () => {
         canvas.edges = canvas.edges.filter((e) => e !== edge);
         drawWires(); setStatus("已删除连线");
@@ -203,14 +240,134 @@ function drawWires(tempLine) {
   if (tempLine) draw(tempLine.x1, tempLine.y1, tempLine.x2, tempLine.y2, tempLine.kind);
 }
 
-/* ---------------- 交互: 移动 / 平移 / 选择 / 连线 ---------------- */
+/* ---------------- 连线状态机 ---------------- */
+function connElems(kind, dir) {
+  // 兼容端口元素: kind=flow -> 对侧 flow 端口; data -> 对侧数据端口
+  if (kind === "flow") return $$(`.flow-${dir === "out" ? "in" : "out"}`);
+  return $$(`.port.${dir === "out" ? "in" : "out"}`);
+}
+function portCenter(el) {
+  const r = el.getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+function clearConnFx() {
+  $$(".port.pulse, .flow-in.pulse, .flow-out.pulse").forEach((p) => p.classList.remove("pulse", "snap"));
+}
+function startConn(e, dir) {
+  e.preventDefault(); e.stopPropagation();
+  const port = e.currentTarget;
+  const isFlow = port.classList.contains("flow-in") || port.classList.contains("flow-out");
+  const kind = isFlow ? "flow" : "data";
+  // 若已有武装(armed)连线且此端口兼容 -> 直接完成"点两下"连线
+  if (conn?.armed) {
+    const okKind = conn.kind === kind;
+    const okDir = (conn.dir === "out" && dir === "in") || (conn.dir === "in" && dir === "out");
+    if (okKind && okDir && port.dataset.node !== conn.node) {
+      completeConn(port);
+      return;
+    }
+    if (!okKind || !okDir) setStatus("端口类型不匹配: 金色执行流连金色, 蓝色数据连蓝色", "err");
+    cancelConn();
+    if (conn === null && false) return;
+  }
+  conn = { kind, dir, node: port.dataset.node,
+           port: isFlow ? (dir === "out" ? FLOW_OUT : FLOW_IN) : port.dataset.port,
+           moved: false, armed: false, sx: e.clientX, sy: e.clientY,
+           srcEl: port };
+  // 兼容端口呼吸提示
+  clearConnFx();
+  connElems(kind, dir).forEach((p) => {
+    if (p.dataset.node !== port.dataset.node) p.classList.add("pulse");
+  });
+  setStatus(dir === "out"
+    ? "拖到目标端口松手, 或再点一下目标端口完成连线 (Esc 取消)"
+    : "反向连线: 拖到上游输出端口, 或点一下上游端口 (Esc 取消)");
+  attachConnDrag();
+}
+
+function attachConnDrag() {
+  const mv = (ev) => {
+    if (!conn) return;
+    if (Math.hypot(ev.clientX - conn.sx, ev.clientY - conn.sy) > 4) conn.moved = true;
+    const a = nodeById(conn.node);
+    let p1;
+    if (conn.kind === "flow") p1 = flowPos(a, conn.dir === "out" ? "out" : "in");
+    else p1 = portPos(a, conn.dir, conn.port);
+    const m = toWorld(ev.clientX, ev.clientY);
+    // 拖动方向: 从入端口反向拉时, 线仍画 出->入
+    const [x1, y1, x2, y2] = conn.dir === "out" ? [p1.x, p1.y, m.x, m.y] : [m.x, m.y, p1.x, p1.y];
+    drawWires({ x1, y1, x2, y2, kind: conn.kind });
+    // 吸附: 高亮最近的兼容端口
+    $$(".port.snap, .flow-in.snap, .flow-out.snap").forEach((p) => p.classList.remove("snap"));
+    let best = null, bestD = 48;
+    for (const el of connElems(conn.kind, conn.dir)) {
+      if (el.dataset.node === conn.node) continue;
+      const c = portCenter(el);
+      const d = Math.hypot(c.x - ev.clientX, c.y - ev.clientY);
+      if (d < bestD) { bestD = d; best = el; }
+    }
+    if (best) best.classList.add("snap");
+    conn.hoverEl = best;
+  };
+  const up = (ev) => {
+    document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
+    if (!conn) return;
+    const target = conn.hoverEl;
+    if (target) { completeConn(target); return; }
+    if (!conn.moved) {
+      // 原地松手 = 点两下模式的第一下: 保持武装, 等待点击目标端口
+      conn.armed = true;
+      setStatus("已选起点 —— 现在点击目标端口完成连线 (Esc 取消)");
+      return;
+    }
+    cancelConn();
+  };
+  document.addEventListener("mousemove", mv);
+  document.addEventListener("mouseup", up);
+}
+
+function completeConn(targetEl) {
+  const isFlowT = targetEl.classList.contains("flow-in") || targetEl.classList.contains("flow-out");
+  const tNode = targetEl.dataset.node;
+  let edge = null;
+  if (conn.kind === "flow" && isFlowT && conn.dir === "out") {
+    edge = { from: conn.node, fromPort: FLOW_OUT, to: tNode, toParam: FLOW_IN, kind: "flow" };
+  } else if (conn.kind === "flow" && isFlowT && conn.dir === "in") {
+    edge = { from: tNode, fromPort: FLOW_OUT, to: conn.node, toParam: FLOW_IN, kind: "flow" };
+  } else if (conn.kind === "data" && !isFlowT && conn.dir === "out") {
+    edge = { from: conn.node, fromPort: conn.port, to: tNode, toParam: targetEl.dataset.port, kind: "data" };
+  } else if (conn.kind === "data" && !isFlowT && conn.dir === "in") {
+    edge = { from: tNode, fromPort: targetEl.dataset.port, to: conn.node, toParam: conn.port, kind: "data" };
+  }
+  cancelConn();
+  if (!edge) { setStatus("连线失败: 端口类型不匹配 (金连金, 蓝连蓝)", "err"); return; }
+  if (edge.from === edge.to) { setStatus("不能连接到节点自身", "err"); return; }
+  // 同类同参只保留一条
+  canvas.edges = canvas.edges.filter((x) =>
+    !((x.kind || "data") === edge.kind && x.to === edge.to && x.toParam === edge.toParam
+      && x.from === edge.from && x.fromPort === edge.fromPort));
+  canvas.edges.push(edge);
+  drawWires();
+  setStatus(edge.kind === "flow"
+    ? `执行流: ${edge.from} → ${edge.to}`
+    : `数据: ${edge.from}.${edge.fromPort} → ${edge.to}.${edge.toParam}`, "ok");
+}
+
+function cancelConn() {
+  conn = null;
+  clearConnFx();
+  drawWires();
+  setStatus("");
+}
+
+/* ---------------- 交互: 移动节点 / 平移 / 缩放 ---------------- */
 function startMove(e, node, el) {
   e.preventDefault(); e.stopPropagation();
   selectNode(node.id);
   const sx = e.clientX, sy = e.clientY, ox = node.x, oy = node.y;
   const mv = (ev) => {
-    node.x = Math.max(0, ox + ev.clientX - sx);
-    node.y = Math.max(0, oy + ev.clientY - sy);
+    node.x = ox + (ev.clientX - sx) / view.z;
+    node.y = oy + (ev.clientY - sy) / view.z;
     el.style.left = node.x + "px"; el.style.top = node.y + "px";
     drawWires();
   };
@@ -219,91 +376,25 @@ function startMove(e, node, el) {
   document.addEventListener("mouseup", up);
 }
 
-/* 空白处按住拖动 = 平移画布 */
-function initPanning() {
-  const wrap = $("#canvas-wrap");
-  wrap.addEventListener("mousedown", (e) => {
-    const onBg = e.target.id === "canvas-wrap" || e.target.id === "canvas"
-      || e.target.tagName === "svg" || e.target.tagName === "defs";
-    if (!onBg || e.button !== 0) return;
-    selectNode(null);
-    hideMenu();
-    const sx = e.clientX, sy = e.clientY, sl = wrap.scrollLeft, st = wrap.scrollTop;
-    wrap.classList.add("panning");
-    const mv = (ev) => {
-      wrap.scrollLeft = sl - (ev.clientX - sx);
-      wrap.scrollTop = st - (ev.clientY - sy);
-    };
-    const up = () => {
-      wrap.classList.remove("panning");
-      document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
-    };
-    document.addEventListener("mousemove", mv);
-    document.addEventListener("mouseup", up);
-  });
-}
-
 function selectNode(id) {
   selected = id;
   $$(".node").forEach((n) => n.classList.toggle("sel", n.id === "node-" + id));
   renderInspector();
 }
 
-function startConn(e) {
-  e.preventDefault(); e.stopPropagation();
-  const port = e.currentTarget;
-  const isFlow = port.classList.contains("flow-out");
-  pendingConn = { kind: isFlow ? "flow" : "data",
-                  node: isFlow ? port.dataset.node : port.dataset.node,
-                  port: isFlow ? FLOW_OUT : port.dataset.port };
-  const mv = (ev) => {
-    const wrap = $("#canvas-wrap").getBoundingClientRect();
-    const cx = ev.clientX - wrap.left + $("#canvas-wrap").scrollLeft;
-    const cy = ev.clientY - wrap.top + $("#canvas-wrap").scrollTop;
-    const a = nodeById(pendingConn.node);
-    const s = isFlow ? flowPos(a, "out") : portPos(a, "out", pendingConn.port);
-    drawWires({ x1: s.x, y1: s.y, x2: cx, y2: cy, kind: pendingConn.kind });
-  };
-  const up = (ev) => {
-    document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
-    const tgt = document.elementFromPoint(ev.clientX, ev.clientY);
-    const okTarget = tgt && (tgt.classList.contains("in") || tgt.classList.contains("flow-in"));
-    if (okTarget) {
-      const isFlowT = tgt.classList.contains("flow-in");
-      if (pendingConn.kind === "flow" && isFlowT) {
-        canvas.edges = canvas.edges.filter((x) =>
-          !(x.kind === "flow" && x.from === pendingConn.node && x.to === tgt.dataset.node));
-        canvas.edges.push({ from: pendingConn.node, fromPort: FLOW_OUT,
-                            to: tgt.dataset.node, toParam: FLOW_IN, kind: "flow" });
-        setStatus(`执行流: ${pendingConn.node} → ${tgt.dataset.node}`);
-      } else if (pendingConn.kind === "data" && !isFlowT) {
-        const edge = { from: pendingConn.node, fromPort: pendingConn.port,
-                       to: tgt.dataset.node, toParam: tgt.dataset.param, kind: "data" };
-        canvas.edges = canvas.edges.filter((x) =>
-          !(x.to === edge.to && x.toParam === edge.toParam && (x.kind || "data") === "data"));
-        canvas.edges.push(edge);
-        setStatus(`数据: ${edge.from}.${edge.fromPort} → ${edge.to}.${edge.toParam}`);
-      } else {
-        setStatus("连线类型不匹配: 金色执行流端口只能连金色, 蓝色数据端口只能连蓝色");
-      }
-    }
-    pendingConn = null; drawWires();
-  };
-  document.addEventListener("mousemove", mv);
-  document.addEventListener("mouseup", up);
-}
-function finishConn(e) { e.stopPropagation(); }
-
-/* ---------------- 右键菜单: 新建节点 ---------------- */
+/* ---------------- 右键菜单 ---------------- */
 function hideMenu() { $("#ctx-menu")?.remove(); }
-function showMenu(x, y, canvasX, canvasY) {
+function showMenu(screenX, screenY, worldX, worldY) {
   hideMenu();
   const menu = document.createElement("div");
   menu.id = "ctx-menu";
   let html = `<div class="ctx-title">添加节点</div>`;
   const groups = {};
   REG.forEach((n) => (groups[n.group] ||= []).push(n));
-  for (const [g, items] of Object.entries(groups)) {
+  const order = [...GROUP_ORDER, ...Object.keys(groups).filter((g) => !GROUP_ORDER.includes(g))];
+  for (const g of order) {
+    const items = groups[g];
+    if (!items) continue;
     html += `<div class="ctx-group">${esc(g)}</div>`;
     for (const it of items)
       html += `<div class="ctx-item" data-type="${esc(it.type)}">${esc(it.title)}</div>`;
@@ -312,30 +403,85 @@ function showMenu(x, y, canvasX, canvasY) {
   menu.addEventListener("click", (e) => {
     const type = e.target.dataset?.type;
     if (!type) return;
-    addNodeAt(type, canvasX, canvasY);
+    addNodeAt(type, Math.round(worldX), Math.round(worldY));
     hideMenu();
   });
   document.body.appendChild(menu);
-  // 防止超出视口
   const r = menu.getBoundingClientRect();
-  menu.style.left = Math.min(x, innerWidth - r.width - 8) + "px";
-  menu.style.top = Math.min(y, innerHeight - r.height - 8) + "px";
+  menu.style.left = Math.min(screenX, innerWidth - r.width - 8) + "px";
+  menu.style.top = Math.min(screenY, innerHeight - r.height - 8) + "px";
 }
-function initContextMenu() {
+function initCanvasEvents() {
   const wrap = $("#canvas-wrap");
-  wrap.addEventListener("contextmenu", (e) => {
-    if (e.target.closest(".node") || e.target.closest(".port") || e.target.closest(".flow-in")
-        || e.target.closest(".flow-out")) return;
+
+  // 平移: 空白左键拖动 / 任意位置中键拖动
+  wrap.addEventListener("mousedown", (e) => {
+    const onBg = e.target.id === "canvas-wrap" || e.target.id === "world"
+      || e.target.id === "wires" || e.target.tagName === "svg" || e.target.tagName === "defs";
+    if (!(e.button === 1 || (e.button === 0 && onBg))) return;
+    if (e.button === 0) selectNode(null);
+    hideMenu();
+    if (conn?.armed) cancelConn();
+    const sx = e.clientX, sy = e.clientY, ox = view.x, oy = view.y;
+    wrap.classList.add("panning");
+    const mv = (ev) => {
+      view.x = ox + (ev.clientX - sx);
+      view.y = oy + (ev.clientY - sy);
+      applyView();
+    };
+    const up = () => {
+      wrap.classList.remove("panning");
+      document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
+    };
+    document.addEventListener("mousemove", mv);
+    document.addEventListener("mouseup", up);
+  });
+
+  // 缩放: 滚轮以鼠标为中心
+  wrap.addEventListener("wheel", (e) => {
     e.preventDefault();
-    const rect = wrap.getBoundingClientRect();
-    const cx = e.clientX - rect.left + wrap.scrollLeft;
-    const cy = e.clientY - rect.top + wrap.scrollTop;
-    showMenu(e.clientX, e.clientY, Math.max(0, cx - 80), Math.max(0, cy - 16));
+    zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.12 : 1 / 1.12);
+  }, { passive: false });
+
+  // 右键新建
+  wrap.addEventListener("contextmenu", (e) => {
+    if (e.target.closest(".node") || e.target.closest(".port")
+        || e.target.closest(".flow-in") || e.target.closest(".flow-out")) return;
+    e.preventDefault();
+    const p = toWorld(e.clientX, e.clientY);
+    showMenu(e.clientX, e.clientY, p.x - 86, p.y - 16);
   });
   document.addEventListener("mousedown", (e) => {
     if (!e.target.closest("#ctx-menu")) hideMenu();
   });
+
+  // 拖放添加
+  wrap.addEventListener("dragover", (e) => e.preventDefault());
+  wrap.addEventListener("drop", (e) => {
+    e.preventDefault();
+    const type = e.dataTransfer.getData("text/newnode");
+    if (!type) return;
+    const p = toWorld(e.clientX, e.clientY);
+    addNodeAt(type, Math.round(p.x - 86), Math.round(p.y - 14));
+  });
+
+  // 缩放按钮
+  $("#zoom-in").addEventListener("click", () => {
+    const r = wrap.getBoundingClientRect();
+    zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1.2);
+  });
+  $("#zoom-out").addEventListener("click", () => {
+    const r = wrap.getBoundingClientRect();
+    zoomAt(r.left + r.width / 2, r.top + r.height / 2, 1 / 1.2);
+  });
+  $("#zoom-fit").addEventListener("click", fitView);
+
+  // Esc 取消连线
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && conn) cancelConn();
+  });
 }
+
 function addNodeAt(type, x, y) {
   const s = spec(type);
   const params = {};
@@ -346,13 +492,47 @@ function addNodeAt(type, x, y) {
   setStatus(`已添加节点: ${s.title} (${node.id})`);
 }
 
+/* ---------------- 复制 / 粘贴 ---------------- */
+function initClipboard() {
+  document.addEventListener("keydown", (e) => {
+    const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName);
+    if (typing || !canvas) return;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c" && selected) {
+      const n = nodeById(selected);
+      clipboard = JSON.parse(JSON.stringify(n));
+      setStatus(`已复制节点 ${n.id} (${spec(n.type).title}), 切换画布后 Ctrl+V 粘贴`, "ok");
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v" && clipboard) {
+      const wrap = $("#canvas-wrap");
+      const p = toWorld(wrap.getBoundingClientRect().left + wrap.clientWidth / 2,
+                        wrap.getBoundingClientRect().top + wrap.clientHeight / 2);
+      const node = JSON.parse(JSON.stringify(clipboard));
+      node.id = uid();
+      node.x = Math.round(p.x - nodeW(node) / 2);
+      node.y = Math.round(p.y - 30);
+      canvas.nodes.push(node);
+      renderAll(); selectNode(node.id);
+      setStatus(`已粘贴为 ${node.id}`, "ok");
+    } else if (e.key === "Delete" && selected
+               && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) {
+      canvas.nodes = canvas.nodes.filter((n) => n.id !== selected);
+      canvas.edges = canvas.edges.filter((e2) => e2.from !== selected && e2.to !== selected);
+      selected = null; renderAll(); renderInspector();
+      setStatus("已删除节点");
+    }
+  });
+}
+
 /* ---------------- 属性面板 ---------------- */
 async function renderInspector() {
   const body = $("#ins-body");
   const node = nodeById(selected);
   if (!node) {
     body.className = "ins-empty";
-    body.innerHTML = "点击节点编辑参数<br>金色端口=执行流(上下游)<br>蓝色端口=数据传值<br>空白处右键=新建节点<br>空白处按住拖动=平移画布";
+    body.innerHTML = "添加节点: 面板拖入 / 空白处右键<br><br>"
+      + "<b>连线</b>: 点一下起点端口 → 再点一下目标端口<br>"
+      + "(或按住端口拖线, 会自动吸附)<br>"
+      + "金色方块 = 执行流(上下游)<br>蓝色圆点 = 数据传值<br><br>"
+      + "空白拖动=平移 · 滚轮=缩放 · Delete=删除";
     return;
   }
   const s = spec(node.type);
@@ -361,7 +541,7 @@ async function renderInspector() {
   for (const p of s.params) {
     const v = node.params[p.name] !== undefined ? node.params[p.name] : (p.default ?? "");
     if (p.type === "port") {
-      let opts = `<option value="">默认 (config: ${esc(canvas._cfg_relay || "config.json")})</option>` +
+      const opts = `<option value="">默认 (config)</option>` +
         COM_PORTS.map((c) => `<option value="${esc(c.port)}" ${c.port === v ? "selected" : ""}>${esc(c.port)} · ${esc(c.desc)}</option>`).join("");
       html += `<div class="field"><label>${esc(p.label)} <a href="javascript:void(0)" class="refresh-ports">刷新</a></label>` +
         `<select data-param="${esc(p.name)}">${opts}</select></div>`;
@@ -385,7 +565,6 @@ async function renderInspector() {
   }
   if (!s.params.length) html += `<div class="field"><label>该节点无参数</label></div>`;
 
-  // 调试区
   html += `<div class="ins-debug"><div class="ins-conn" style="margin-top:10px">调试</div>`;
   html += `<button class="dbg-run" id="ins-run-node">▶ 运行此节点</button>`;
   for (const d of s.debug || [])
@@ -431,8 +610,7 @@ async function renderInspector() {
 
 /* ---------------- 单节点调试 ---------------- */
 async function runSingleNode(node) {
-  const el = $("#node-" + node.id);
-  const st = el ? $(".node-status", el) : null;
+  const st = $(".node-status", $("#node-" + node.id));
   if (st) { st.className = "node-status"; st.textContent = "⏳ 调试中…"; }
   setStatus(`调试节点 ${node.id} (${spec(node.type).title})…`);
   try {
@@ -457,10 +635,17 @@ async function loadCanvas(name) {
   canvas = await jfetch("/api/canvases/" + encodeURIComponent(name));
   $("#chk-stopfail").checked = canvas.stop_on_fail !== false;
   renderAll(); renderInspector();
-  setStatus(`已加载画布: ${name}`, "ok");
+  if (canvas.view && typeof canvas.view.z === "number") {
+    Object.assign(view, canvas.view);
+    applyView();
+  } else {
+    fitView();          // 新画布: 内容自动居中
+  }
+  setStatus(`已加载画布: ${name} (空白拖动平移, 滚轮缩放)`, "ok");
 }
 async function saveCanvas() {
   canvas.stop_on_fail = $("#chk-stopfail").checked;
+  canvas.view = { x: Math.round(view.x), y: Math.round(view.y), z: +view.z.toFixed(3) };
   await jput("/api/canvases/" + encodeURIComponent(canvas.name), canvas);
   await refreshCanvasList(canvas.name);
   setStatus(`画布已保存: ${canvas.name}`, "ok");
@@ -532,40 +717,15 @@ async function init() {
   await loadPorts();
   renderPalette();
 
-  const c = $("#canvas");
-  const svg = $("#wires");
-  c.appendChild(svg);
-  svg.setAttribute("width", CANVAS_W); svg.setAttribute("height", CANVAS_H);
-
-  initPanning();
-  initContextMenu();
-
-  $("#canvas-wrap").addEventListener("dragover", (e) => e.preventDefault());
-  $("#canvas-wrap").addEventListener("drop", (e) => {
-    e.preventDefault();
-    const type = e.dataTransfer.getData("text/newnode");
-    if (!type) return;
-    const wrap = $("#canvas-wrap");
-    const x = e.clientX - wrap.getBoundingClientRect().left + wrap.scrollLeft - 86;
-    const y = e.clientY - wrap.getBoundingClientRect().top + wrap.scrollTop - 14;
-    addNodeAt(type, Math.max(0, x), Math.max(0, y));
-  });
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Delete" && selected && !["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) {
-      canvas.nodes = canvas.nodes.filter((n) => n.id !== selected);
-      canvas.edges = canvas.edges.filter((e2) => e2.from !== selected && e2.to !== selected);
-      selected = null; renderAll(); renderInspector();
-      setStatus("已删除节点");
-    }
-  });
+  initCanvasEvents();
+  initClipboard();
 
   $("#canvas-list").addEventListener("change", () => loadCanvas($("#canvas-list").value));
   $("#btn-new").addEventListener("click", async () => {
     const name = prompt("新画布名称 (即 case 名):");
     if (!name) return;
     canvas = { name, stop_on_fail: true,
-               nodes: [{ id: "n1", type: "relay.on", x: 60, y: 60, params: { channel: 0 } }],
+               nodes: [{ id: "n1", type: "relay.on", x: 0, y: 0, params: { channel: 0 } }],
                edges: [] };
     await saveCanvas();
     await refreshCanvasList(name);
@@ -595,6 +755,7 @@ async function init() {
     setStatus(`用例代码已生成: ${r.file}`, "ok");
     alert("用例代码已生成:\n" + r.file + "\n\n运行: python app/cases/" + canvas.name + ".py");
   });
+  $("#btn-help").addEventListener("click", () => $("#help-overlay").classList.remove("hidden"));
 
   await refreshCanvasList();
   const names = $$("#canvas-list option").map((o) => o.textContent);
