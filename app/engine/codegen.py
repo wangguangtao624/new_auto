@@ -89,7 +89,36 @@ def generate(canvas: dict) -> Path:
                 return f"{var_of[src]}_{_safe(port)}"
             return repr(params.get(key))
 
-        if ntype == "relay.on":
+        if ntype == "relay.ctrl":
+            if params.get("port"):
+                lines.append(f"    ctx.relay({params['port']!r})  # 指定继电器串口")
+            action = params.get("action", "on")
+            if action == "on":
+                lines.append(f"    ctx.ensure_powered({pv('channel', 0)})")
+            elif action == "off":
+                lines.append(f"    ctx.power_off({pv('channel', 0)})")
+            else:
+                lines.append("    ctx.power_off()")
+                lines.append(f"    time.sleep({pv('off_seconds', 15)})")
+                lines.append(f"    ctx.ensure_powered({pv('channel', 0)})")
+        elif ntype == "device.stream":
+            ini = params.get("ini")
+            if ini:
+                lines.append(f"    _dev = ctx.ensure_configured("
+                             f"str(ROOT / 'configs' / 'init_file' / {ini!r}))")
+            else:
+                lines.append("    _dev = ctx.ensure_configured()")
+            if params.get("open_video", True):
+                lines.append("    ctx.ensure_video()")
+            if params.get("capture"):
+                lines.append(f"    _ok, _path = ctx.image().capture(_dev, {params.get('name', 'case_frame')!r})")
+                lines.append("    assert _ok, '抓帧存图失败'")
+                lines.append("    print('[device.stream] 抓帧:', _path)")
+            if params.get("read_fps"):
+                lines.append("    print('[device.stream] fps =', round(_dev.get_fps(), 2))")
+            if params.get("read_dn"):
+                lines.append("    print('[device.stream] dn =', round(_dev.get_dn(), 2))")
+        elif ntype == "relay.on":
             if params.get("port"):
                 lines.append(f"    ctx.relay({params['port']!r})  # 指定继电器串口")
             lines.append(f"    ctx.ensure_powered({pv('channel', 0)})")
@@ -142,6 +171,48 @@ def generate(canvas: dict) -> Path:
                     lines.append(f"    assert {var}_rb == {pv('value', '0x0001')}, "
                                  f"f'写后校验不一致: {{ {var}_rb:#x }}'")
                     lines.append(f"    print('[i2c.rw] 写并校验通过')")
+        elif ntype == "i2c.batch":
+            slave = pv("slave", "0x40")
+            mode = params.get("mode", "A2D2")
+            ops = params.get("ops", "")
+            lines.append("    from modules.i2c import I2CController as _I")
+            lines.append("    _m_def = _I_MODE['%s']" % mode)
+            lines.append("    _i2c = ctx.i2c()")
+            lines.append("    _slave = %s" % slave)
+            lines.append("    _results = []")
+            lines.append("    _OPS = %r" % ops)
+            lines.append("    for _raw in str(_OPS).splitlines():")
+            lines.append("        _line = _raw.split('#')[0].strip()")
+            lines.append("        if not _line: continue")
+            lines.append("        _p = _line.split()")
+            lines.append("        _op = _p[0].lower()")
+            lines.append("        _m = _I_MODE[_p[2]] if len(_p) > 2 else _m_def")
+            lines.append("        if _op == 'read':")
+            lines.append("            _ok, _v = _i2c.read(int(_p[1],16), slave=_slave, addr_len=_m[0], bits=_m[1])")
+            lines.append("            assert _ok, f'读失败 {_line}'")
+            lines.append("            print(f'  [read] 0x{int(_p[1],16):04x} = 0x{_v:x}')")
+            lines.append("        elif _op == 'write':")
+            lines.append("            _a, _val = int(_p[1],16), int(_p[2],16)")
+            lines.append("            assert _i2c.write(_a, _val, slave=_slave, addr_len=_m[0], bits=_m[1]), f'写失败 {_line}'")
+            lines.append("            print(f'  [write] 0x{_a:04x} = 0x{_val:x}')")
+            lines.append("        elif _op == 'verify':")
+            lines.append("            _a, _val = int(_p[1],16), int(_p[2],16)")
+            lines.append("            assert _i2c.write(_a, _val, slave=_slave, addr_len=_m[0], bits=_m[1]), f'写失败 {_line}'")
+            lines.append("            _ok, _rb = _i2c.read(_a, slave=_slave, addr_len=_m[0], bits=_m[1])")
+            lines.append("            assert _ok and _rb == _val, f'回读不一致: 写 0x{_val:x} 读 0x{_rb:x}'")
+            lines.append("            print(f'  [verify] 0x{_a:04x} = 0x{_rb:x} 校验通过')")
+            lines.append("        elif _op == 'expect':")
+            lines.append("            _a, _exp = int(_p[1],16), int(_p[2],16)")
+            lines.append("            _mask = int(_p[3],16) if len(_p) > 3 else 0xFFFFFFFF")
+            lines.append("            _sh = int(_p[4],0) if len(_p) > 4 else 0")
+            lines.append("            _ok, _v = _i2c.read(_a, slave=_slave, addr_len=_m[0], bits=_m[1])")
+            lines.append("            assert _ok, f'读失败 {_line}'")
+            lines.append("            _act = (_v & _mask) >> _sh")
+            lines.append("            assert _act == _exp, f'断言失败: 实际 0x{_act:x} 期望 0x{_exp:x} ({_line})'")
+            lines.append("            print(f'  [expect] 0x{_act:x} == 0x{_exp:x} 通过')")
+            lines.append("        else:")
+            lines.append("            raise RuntimeError(f'未知操作: {_op}')")
+            lines.append("    print('[i2c.batch] 全部通过')")
         elif ntype == "flow.reroute":
             if "in" in ins:
                 _src, _port = ins["in"]

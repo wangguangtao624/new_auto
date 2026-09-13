@@ -170,7 +170,42 @@ class ImageTools:
         return {"pass": delta > 0.5, "mean_a": round(mean_a, 2),
                 "mean_b": round(mean_b, 2), "delta": round(delta, 2)}
 
-    # ------------------------------------------------------------ 显示 (可选)
+    # ------------------------------------------------------------ RAW 转 PNG (界面预览用)
+
+    def to_png_bytes(self, path) -> bytes:
+        """把帧文件转换为 PNG 字节流 (浏览器预览用; 需要 opencv-python)
+
+        支持 uyvy/yuyv/yvyu/vyuy 与 raw16/bin。
+        """
+        import cv2
+        width, height, bit, fmt = self.parse_frame_file(path)
+        data = Path(path).read_bytes()
+        if fmt in ("bin", "raw", "raw16") or (bit == 16 and len(data) == width * height * 2
+                                              and fmt not in ("uyvy", "yuyv", "yvyu", "vyuy")):
+            raw = np.frombuffer(data, dtype=np.uint16).reshape((height, width))
+            img = cv2.normalize(raw, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+        else:
+            frame = np.frombuffer(data, dtype=np.uint8).reshape((height, width, 2))
+            code = {"uyvy": cv2.COLOR_YUV2BGR_UYVY, "yuyv": cv2.COLOR_YUV2BGR_YUYV,
+                    "yvyu": cv2.COLOR_YUV2BGR_YVYU}.get(fmt)
+            if code is None:  # vyuy: 字节交换后按 uyvy 解
+                frame = frame[:, :, ::-1]
+                code = cv2.COLOR_YUV2BGR_UYVY
+            img = cv2.cvtColor(frame, code)
+        ok, buf = cv2.imencode(".png", img)
+        if not ok:
+            raise RuntimeError("PNG 编码失败")
+        return buf.tobytes()
+
+    def convert_to_png(self, path) -> Path:
+        """转换并缓存 PNG 到 <帧目录>/_thumbs/, 返回 PNG 路径"""
+        src = Path(path)
+        cache = src.parent / "_thumbs"
+        cache.mkdir(exist_ok=True)
+        dst = cache / (src.stem + ".png")
+        if not dst.exists() or dst.stat().st_mtime < src.stat().st_mtime:
+            dst.write_bytes(self.to_png_bytes(src))
+        return dst
 
     def display(self, path, max_width=960):
         """用 OpenCV 显示帧文件 (需要 opencv-python, 缺失时只打日志)"""

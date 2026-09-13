@@ -48,5 +48,18 @@
       }
     },
     "fw_file": "MAT130A_JUNGE-A21-JZ9173-SUB_DVP_24M_78M_1280x880@25fps_YUV422_0022_v4.1.7_C0101.bin"
+  },
+  "agent": {
+    "base_url": "https://token.sensenova.cn/v1/chat/completions",
+    "model": "deepseek-v4-flash",
+    "models": [
+      "deepseek-v4-flash",
+      "deepseek-v4-pro",
+      "glm-5.2",
+      "kimi-k3",
+      "sensenova-6.8-flash-lite"
+    ],
+    "api_key_file": "app/agent_key.local",
+    "img_dir": "logs/img"
   }
 }

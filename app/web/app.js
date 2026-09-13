@@ -83,9 +83,11 @@ function fitView() {
 }
 
 /* ---------------- 面板 ---------------- */
+function visibleRegistry() { return REG.filter((n) => !n.hidden); }
+
 function renderPalette() {
   const groups = {};
-  REG.forEach((n) => (groups[n.group] ||= []).push(n));
+  visibleRegistry().forEach((n) => (groups[n.group] ||= []).push(n));
   const root = $("#palette-groups");
   root.innerHTML = "";
   const order = [...GROUP_ORDER, ...Object.keys(groups).filter((g) => !GROUP_ORDER.includes(g))];
@@ -401,7 +403,7 @@ function showMenu(screenX, screenY, worldX, worldY) {
   menu.id = "ctx-menu";
   let html = `<div class="ctx-title">添加节点</div>`;
   const groups = {};
-  REG.forEach((n) => (groups[n.group] ||= []).push(n));
+  visibleRegistry().forEach((n) => (groups[n.group] ||= []).push(n));
   const order = [...GROUP_ORDER, ...Object.keys(groups).filter((g) => !GROUP_ORDER.includes(g))];
   for (const g of order) {
     const items = groups[g];
@@ -569,6 +571,9 @@ async function renderInspector() {
     } else if (p.type === "int" || p.type === "float") {
       html += `<div class="field"><label>${esc(p.label)}</label>` +
         `<input type="number" step="${p.type === "float" ? "0.1" : "1"}" data-param="${esc(p.name)}" value="${esc(v)}"></div>`;
+    } else if (p.type === "textarea") {
+      html += `<div class="field"><label>${esc(p.label)}</label>` +
+        `<textarea data-param="${esc(p.name)}" rows="6" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--fg);border-radius:6px;padding:6px 8px;font:11.5px/1.6 Consolas,monospace;resize:vertical">${esc(v)}</textarea></div>`;
     } else {
       html += `<div class="field"><label>${esc(p.label)}${p.hex ? " (十六进制)" : ""}</label>` +
         `<input type="text" data-param="${esc(p.name)}" value="${esc(v)}"></div>`;
@@ -762,6 +767,129 @@ async function pollRun(runId) {
   });
 }
 
+/* ---------------- 右侧面板 Tabs ---------------- */
+function initTabs() {
+  $$("#ins-tabs .tab").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      $$("#ins-tabs .tab").forEach((b) => b.classList.toggle("active", b === btn));
+      $("#tab-props").classList.toggle("hidden", btn.dataset.tab !== "props");
+      $("#tab-ai").classList.toggle("hidden", btn.dataset.tab !== "ai");
+      if (btn.dataset.tab === "ai") initAiPanel();
+    });
+  });
+}
+
+/* ---------------- AI 助手 ---------------- */
+let aiMessages = [];   // {role, content}
+let aiReady = false;
+
+async function initAiPanel() {
+  if (aiReady) return;
+  aiReady = true;
+  try {
+    const m = await jfetch("/api/agent/models");
+    $("#ai-model").innerHTML = (m.models || []).map(
+      (x) => `<option ${x === m.model ? "selected" : ""}>${esc(x)}</option>`).join("");
+  } catch { /* 模型列表拉取失败不阻塞 */ }
+  $("#ai-send").addEventListener("click", aiSend);
+  $("#ai-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) aiSend();
+  });
+}
+
+function aiBubble(role, text) {
+  const div = document.createElement("div");
+  div.className = "ai-msg ai-" + (role === "user" ? "user" : "bot");
+  div.textContent = text;
+  const hist = $("#ai-history");
+  hist.appendChild(div);
+  hist.scrollTop = hist.scrollHeight;
+  return div;
+}
+
+async function aiSend() {
+  const input = $("#ai-input");
+  const prompt = input.value.trim();
+  if (!prompt) return;
+  input.value = "";
+  aiBubble("user", prompt);
+  aiMessages.push({ role: "user", content: prompt });
+  const thinking = aiBubble("bot", "思考中…");
+  $("#ai-send").disabled = true;
+  try {
+    const r = await jpost("/api/agent", { prompt, model: $("#ai-model").value,
+                                          history: aiMessages.slice(0, -1) });
+    if (r.canvas && r.canvas.nodes?.length) {
+      const titles = r.canvas.nodes.map((n) => {
+        const s = spec(n.type);
+        return `${n.id} ${s ? s.title : n.type}`;
+      }).join(" → ");
+      thinking.textContent = `已生成画布「${r.canvas.name || "未命名"}」\n流程: ${titles}`;
+    } else {
+      thinking.textContent = r.reply || "(空回复)";
+    }
+    aiMessages.push({ role: "assistant", content: r.reply || "" });
+    if (r.canvas && r.canvas.nodes?.length) {
+      const apply = document.createElement("button");
+      apply.className = "ai-apply";
+      apply.textContent = `✔ 应用到画布 (${r.canvas.nodes.length} 节点 / ${r.canvas.edges.length} 连线)`
+        + (r.canvas.name ? ` : ${r.canvas.name}` : "");
+      apply.addEventListener("click", async () => {
+        if (!confirm(`用 AI 生成的画布替换当前画布「${canvas.name}」的内容?`)) return;
+        const keepName = canvas.name;
+        canvas = { ...r.canvas, name: keepName, stop_on_fail: true };
+        await saveCanvas();
+        renderAll(); fitView(); renderInspector();
+        setStatus(`已应用 AI 生成的画布 (${canvas.nodes.length} 节点)`, "ok");
+        apply.disabled = true; apply.textContent = "已应用 ✓";
+      });
+      thinking.after(apply);
+    }
+  } catch (e) {
+    thinking.textContent = "出错: " + e.message;
+    thinking.className = "ai-msg ai-bot ai-err";
+  } finally { $("#ai-send").disabled = false; }
+}
+
+/* ---------------- 图片库 ---------------- */
+async function openGallery() {
+  $("#gallery-overlay").classList.remove("hidden");
+  await refreshGallery();
+}
+async function refreshGallery() {
+  try {
+    const r = await jfetch("/api/img");
+    $("#gallery-dir").textContent = r.dir;
+    const grid = $("#gallery-grid");
+    if (!r.files.length) {
+      grid.innerHTML = `<div style="color:var(--dim);padding:20px">还没有抓帧图片 —— 运行带「抓帧存图」的画布后这里会显示</div>`;
+      return;
+    }
+    grid.innerHTML = r.files.map((f) => `
+      <div class="gal-item" data-name="${esc(f.name)}">
+        <img loading="lazy" src="/api/img/thumb?name=${encodeURIComponent(f.name)}">
+        <div class="gal-name" title="${esc(f.name)}">${esc(f.name)}</div>
+      </div>`).join("");
+    $$(".gal-item", grid).forEach((el) => {
+      el.addEventListener("click", () => {
+        $("#gallery-big").src = "/api/img/thumb?name=" + encodeURIComponent(el.dataset.name);
+        $("#gallery-caption").textContent = el.dataset.name;
+        $("#gallery-viewer").classList.remove("hidden");
+      });
+    });
+  } catch (e) {
+    $("#gallery-grid").innerHTML = `<div style="color:var(--err);padding:20px">${esc(e.message)}</div>`;
+  }
+}
+function initGallery() {
+  $("#btn-gallery").addEventListener("click", openGallery);
+  $("#gallery-refresh").addEventListener("click", refreshGallery);
+  $("#gallery-overlay").addEventListener("click", (e) => {
+    if (e.target.id === "gallery-overlay") $("#gallery-overlay").classList.add("hidden");
+  });
+  $("#gallery-viewer").addEventListener("click", () => $("#gallery-viewer").classList.add("hidden"));
+}
+
 /* ---------------- 初始化 ---------------- */
 async function loadPorts() {
   try { COM_PORTS = (await jfetch("/api/ports")).ports; } catch { COM_PORTS = []; }
@@ -773,6 +901,8 @@ async function init() {
 
   initCanvasEvents();
   initClipboard();
+  initTabs();
+  initGallery();
 
   $("#canvas-list").addEventListener("change", () => loadCanvas($("#canvas-list").value));
   $("#btn-new").addEventListener("click", async () => {

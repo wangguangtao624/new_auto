@@ -14,14 +14,36 @@
     ...
   ]
 }
+
+每个节点在独立线程中执行并带超时保护: 底层 DLL 偶发阻塞 (如抓帧时视频流中断)
+不会拖死整个运行, 超时节点判失败, 流程按 失败即停 继续处理。
 """
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutTimeoutError
 
 from .registry import NODES, get_node
 from .session import Session
 
 logger = logging.getLogger("new_auto.engine")
+
+# 节点执行超时 (秒): 底层 DLL 偶发无响应时保护整个流程
+_NODE_TIMEOUTS = {
+    "fw.download": 480,          # 烧录含掉电重启
+    "fw.erase": 180,
+    "fw.crc_check": 180,
+    "fw.soc_reboot": 60,
+    "relay.ctrl": 60,            # 掉电重启含 15s 断电
+    "relay.power_cycle": 60,
+    "device.configure": 60,
+    "device.stream": 120,
+    "device.grab_save": 40,
+    "image.compare_register": 120,
+}
+_DEFAULT_TIMEOUT = 90
+
+_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="node")
 
 
 class CanvasError(Exception):
@@ -118,7 +140,14 @@ def run_canvas(canvas: dict, config_path=None, stop_on_fail=None, on_event=None)
             emit({"event": "start", "id": nid, "title": entry["title"]})
             t0 = time.time()
             try:
-                outs = spec["run"](ctx, node.get("params", {}), inputs) or {}
+                fut = _POOL.submit(spec["run"], ctx, node.get("params", {}), inputs)
+                try:
+                    outs = fut.result(timeout=_NODE_TIMEOUTS.get(ntype, _DEFAULT_TIMEOUT))
+                except FutTimeoutError:
+                    raise RuntimeError(
+                        f"执行超时 ({_NODE_TIMEOUTS.get(ntype, _DEFAULT_TIMEOUT)}s), "
+                        "硬件可能无响应 —— 建议掉电重启模组后重试")
+                outs = outs or {}
                 entry["status"] = "passed"
                 entry["outputs"] = outs
                 outputs_by_node[nid] = outs

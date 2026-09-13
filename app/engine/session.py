@@ -69,6 +69,8 @@ class Session:
 
     def i2c(self) -> I2CController:
         if self._i2c is None:
+            # I2C 链路要求 Dothinkey 设备已下发配置并 open, 未配置时自动补齐
+            self.ensure_configured()
             self._i2c = I2CController(self.device(),
                                       default_slave=int(self.cfg["i2c"]["default_slave"], 16))
         return self._i2c

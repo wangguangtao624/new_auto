@@ -33,7 +33,9 @@ from app.engine.registry import get_registry, get_node, DEBUG, NODES   # noqa: E
 from app.engine.executor import run_canvas, CanvasError         # noqa: E402
 from app.engine.session import Session                          # noqa: E402
 from app.engine import codegen                                  # noqa: E402
+from app.engine import agent                                    # noqa: E402
 from modules.log_setup import setup_logging                     # noqa: E402
+from modules.image import ImageTools                            # noqa: E402
 
 CANVAS_DIR = APP_DIR / "canvases"
 CASES_DIR = APP_DIR / "cases"
@@ -77,6 +79,8 @@ def _run_thread(run_id, canvas, stop_on_fail):
 
     try:
         report = run_canvas(canvas, stop_on_fail=stop_on_fail, on_event=on_event)
+        # 保留 on_event 阶段积累的实时日志 (run_canvas 内部 log 为空)
+        report["log"] = rec["report"].get("log", [])
         rec["report"].update(report)
         rec["status"] = "done"
     except Exception as e:
@@ -164,6 +168,35 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ports": ports})
         if path == "/api/config":
             return self._json(json.loads((ROOT / "config.json").read_text(encoding="utf-8")))
+        if path == "/api/img":
+            """列出抓帧目录中的图片文件 (新->旧)"""
+            img_dir = ROOT / agent.agent_cfg().get("img_dir", "logs/img")
+            files = []
+            if img_dir.is_dir():
+                for p in sorted(img_dir.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+                    if p.is_file() and p.suffix.lower() in (".uyvy", ".yuyv", ".yvyu", ".vyuy",
+                                                            ".bin", ".raw", ".raw16", ".png"):
+                        files.append({"name": p.name, "size": p.stat().st_size,
+                                      "mtime": int(p.stat().st_mtime)})
+            return self._json({"dir": str(img_dir), "files": files[:200]})
+        if path.startswith("/api/img/thumb"):
+            """帧文件转 PNG 预览 (带磁盘缓存)"""
+            from urllib.parse import parse_qs
+            qs = parse_qs(urlparse(self.path).query)
+            name = Path((qs.get("name") or [""])[0]).name
+            img_dir = ROOT / agent.agent_cfg().get("img_dir", "logs/img")
+            f = img_dir / name
+            if not f.exists():
+                return self._json({"error": f"图片不存在: {name}"}, 404)
+            try:
+                tools = ImageTools(str(img_dir))
+                png = tools.convert_to_png(f)
+                return self._send(200, png.read_bytes(), "image/png")
+            except Exception as e:
+                return self._json({"error": f"转换失败: {e}"}, 500)
+        if path == "/api/agent/models":
+            return self._json({"models": agent.agent_cfg().get("models", []),
+                               "model": agent.agent_cfg().get("model")})
         if path == "/api/canvases":
             CANVAS_DIR.mkdir(exist_ok=True)
             names = sorted(p.stem for p in CANVAS_DIR.glob("*.json"))
@@ -208,6 +241,20 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = unquote(urlparse(self.path).path)
+        if path == "/api/agent":
+            """AI 助手: 对话 + 生成画布。body: {prompt, model, history:[{role,content}]}"""
+            body = self._read_json()
+            prompt = str(body.get("prompt") or "").strip()
+            if not prompt:
+                return self._json({"error": "prompt 为空"}, 400)
+            model = body.get("model") or agent.agent_cfg().get("model")
+            try:
+                canvas, reply = agent.agent_generate(prompt, model=model,
+                                                     history=body.get("history"))
+                return self._json({"reply": reply, "canvas": canvas, "model": model})
+            except Exception as e:
+                logger.exception("Agent 调用失败")
+                return self._json({"error": f"Agent 调用失败: {e}"}, 500)
         if path == "/api/run_node":
             """单节点调试: 新建独立会话, 只执行这一个节点"""
             body = self._read_json()

@@ -11,3 +11,6 @@ bin/*.dll
 .idea/
 # 工具数据
 .ua/
+
+# AI Agent key (不入 git)
+app/agent_key.local

@@ -257,3 +257,54 @@ a.refresh-ports { color: var(--accent); font-size: 11px; }
 .help-body { padding: 14px 18px; font-size: 12.5px; line-height: 1.8; }
 .help-body b { color: var(--accent); }
 .help-body p { margin-bottom: 10px; }
+
+/* ---------- 右侧 Tabs ---------- */
+#ins-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+#ins-tabs .tab { flex: 1; }
+#ins-tabs .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+#tab-ai { display: flex; flex-direction: column; height: calc(100vh - 110px); }
+#tab-ai.hidden { display: none; }
+#ai-history { flex: 1; overflow-y: auto; margin-bottom: 8px; }
+.ai-msg { padding: 8px 10px; border-radius: 9px; margin-bottom: 8px; font-size: 12px;
+  white-space: pre-wrap; word-break: break-all; }
+.ai-sys { background: var(--panel2); color: var(--dim); }
+.ai-user { background: var(--accent); color: #fff; margin-left: 22px; }
+.ai-bot { background: var(--panel2); margin-right: 10px; }
+.ai-err { color: var(--err); }
+.ai-apply {
+  display: block; width: 100%; margin: -4px 0 10px; background: var(--ok);
+  border-color: var(--ok); color: #fff; font-weight: 600;
+}
+#ai-input { width: 100%; background: var(--panel2); border: 1px solid var(--line);
+  color: var(--fg); border-radius: 8px; padding: 8px; font-size: 12.5px;
+  resize: vertical; margin-bottom: 8px; font-family: inherit; }
+
+/* ---------- 图片库 ---------- */
+#gallery-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 250;
+  display: flex; align-items: center; justify-content: center;
+}
+#gallery-overlay.hidden { display: none; }
+#gallery-box {
+  width: min(920px, 92vw); max-height: 84vh; display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  box-shadow: 0 14px 44px rgba(0,0,0,.6);
+}
+#gallery-grid {
+  overflow-y: auto; padding: 12px; display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+.gal-item { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+  cursor: pointer; overflow: hidden; }
+.gal-item:hover { border-color: var(--accent); }
+.gal-item img { width: 100%; display: block; }
+.gal-name { padding: 5px 8px; font-size: 10.5px; color: var(--dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#gallery-viewer {
+  position: fixed; inset: 0; background: rgba(0,0,0,.8); z-index: 260;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  cursor: zoom-out;
+}
+#gallery-viewer.hidden { display: none; }
+#gallery-big { max-width: 94vw; max-height: 88vh; }
+#gallery-caption { color: #fff; margin-top: 8px; font-size: 12px; }

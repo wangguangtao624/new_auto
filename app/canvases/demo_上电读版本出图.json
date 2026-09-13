@@ -4,76 +4,48 @@
   "nodes": [
     {
       "id": "n1",
-      "type": "relay.on",
-      "x": 60,
-      "y": 40,
+      "type": "relay.ctrl",
+      "x": 100,
+      "y": 0,
       "params": {
-        "channel": 0
+        "action": "on",
+        "channel": 0,
+        "off_seconds": 15
       }
     },
     {
       "id": "n2",
-      "type": "device.configure",
-      "x": 60,
-      "y": 170,
-      "params": {}
+      "type": "i2c.batch",
+      "x": 100,
+      "y": 150,
+      "params": {
+        "slave": "0x40",
+        "mode": "A2D4",
+        "ops": "read 0x00d8 A2D4\n# 断言固件主版本号 == 4\nexpect 0x00d8 0x04 0x00FF0000 16 A2D4"
+      }
     },
     {
       "id": "n3",
-      "type": "i2c.rw",
-      "x": 60,
-      "y": 300,
+      "type": "device.stream",
+      "x": 100,
+      "y": 320,
       "params": {
-        "op": "read",
-        "slave": "0x40",
-        "addr": "0x00d8",
-        "value": "0x0001",
-        "verify": true,
-        "mode": "A2D4"
-      }
-    },
-    {
-      "id": "n4",
-      "type": "flow.assert_value",
-      "x": 400,
-      "y": 300,
-      "params": {
-        "mask": "0x00FF0000",
-        "shift": 16,
-        "op": ">=",
-        "expected": "0x4"
-      }
-    },
-    {
-      "id": "n5",
-      "type": "device.open_video",
-      "x": 60,
-      "y": 440,
-      "params": {}
-    },
-    {
-      "id": "n6",
-      "type": "device.grab_save",
-      "x": 400,
-      "y": 440,
-      "params": {
+        "open_video": true,
+        "capture": true,
+        "read_fps": true,
+        "read_dn": false,
         "name": "demo"
       }
     },
     {
-      "id": "n7",
-      "type": "device.fps",
-      "x": 740,
-      "y": 440,
-      "params": {}
-    },
-    {
-      "id": "n8",
-      "type": "relay.off",
-      "x": 400,
-      "y": 570,
+      "id": "n4",
+      "type": "relay.ctrl",
+      "x": 100,
+      "y": 470,
       "params": {
-        "channel": 0
+        "action": "off",
+        "channel": 0,
+        "off_seconds": 15
       }
     }
   ],
@@ -98,46 +70,6 @@
       "to": "n4",
       "toParam": "__in",
       "kind": "flow"
-    },
-    {
-      "from": "n4",
-      "fromPort": "__out",
-      "to": "n5",
-      "toParam": "__in",
-      "kind": "flow"
-    },
-    {
-      "from": "n5",
-      "fromPort": "__out",
-      "to": "n6",
-      "toParam": "__in",
-      "kind": "flow"
-    },
-    {
-      "from": "n6",
-      "fromPort": "__out",
-      "to": "n7",
-      "toParam": "__in",
-      "kind": "flow"
-    },
-    {
-      "from": "n7",
-      "fromPort": "__out",
-      "to": "n8",
-      "toParam": "__in",
-      "kind": "flow"
-    },
-    {
-      "from": "n3",
-      "fromPort": "value",
-      "to": "n4",
-      "toParam": "value",
-      "kind": "data"
     }
-  ],
-  "view": {
-    "x": 410,
-    "y": 203,
-    "z": 1.25
-  }
+  ]
 }

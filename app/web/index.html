@@ -19,6 +19,7 @@
   <button id="btn-save">💾 保存画布</button>
   <button id="btn-run" class="primary">▶ 运行</button>
   <button id="btn-gencode">⇩ 生成代码</button>
+  <button id="btn-gallery" title="抓帧图片预览">🖼 图片</button>
   <button id="btn-help" title="连线与操作说明">❓ 帮助</button>
   <span id="status" class="status"></span>
 </div>
@@ -52,9 +53,37 @@
   </div>
 
   <div id="inspector">
-    <div class="ins-title">属性 / 调试</div>
-    <div id="ins-body" class="ins-empty">点击节点编辑参数</div>
+    <div id="ins-tabs">
+      <button class="tab active" data-tab="props">属性 / 调试</button>
+      <button class="tab" data-tab="ai">🤖 AI 助手</button>
+    </div>
+    <div id="tab-props">
+      <div id="ins-body" class="ins-empty">点击节点编辑参数</div>
+    </div>
+    <div id="tab-ai" class="hidden">
+      <div class="field" style="margin-bottom:8px">
+        <label>模型</label>
+        <select id="ai-model"></select>
+      </div>
+      <div id="ai-history"><div class="ai-msg ai-sys">描述你想要的测试用例, 我来生成画布。<br>例如: "先上电, 读0x00d8断言主版本是4, 出图抓帧读FPS, 最后断电"</div></div>
+      <textarea id="ai-input" rows="3" placeholder="描述想实现的用例… (Ctrl+Enter 发送)"></textarea>
+      <button id="ai-send" class="primary" style="width:100%">发送给 AI 生成画布</button>
+    </div>
   </div>
+</div>
+
+<div id="gallery-overlay" class="hidden">
+  <div id="gallery-box">
+    <div class="runlog-head"><b>🖼 抓帧图片</b><span id="gallery-dir" style="color:var(--dim);font-size:11px"></span>
+      <button id="gallery-refresh">刷新</button>
+      <button onclick="document.getElementById('gallery-overlay').classList.add('hidden')">✕</button></div>
+    <div id="gallery-grid"></div>
+  </div>
+</div>
+
+<div id="gallery-viewer" class="hidden" title="点击关闭">
+  <img id="gallery-big" alt="">
+  <div id="gallery-caption"></div>
 </div>
 
 <div id="help-overlay" class="hidden">

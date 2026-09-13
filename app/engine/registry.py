@@ -19,6 +19,7 @@ I2C 数据位宽模式 (用户术语): A<m>D<n> = <m> 字节地址 / <n> 字节�
     A2D4=(16,32) A4D1=(32,8) A4D2=(32,16) A4D4=(32,32)
 """
 import json
+import logging
 import time
 from pathlib import Path
 
@@ -67,10 +68,13 @@ def _fw_options():
     return sorted(p.name for p in d.glob("*.bin")) or ["(无)"]
 
 
+logger = logging.getLogger("new_auto.registry")
+
 # ---------------------------------------------------------------- 节点定义
 
 NODES = {}
 DEBUG = {}   # "type:action" -> {type, name, label, run(ctx, params)}
+HIDDEN_LEGACY = []   # 旧版细分节点: 保持可执行(兼容旧画布)但不在面板显示
 
 
 def node(type, group, title, desc="", color="#4a89dc", params=None,
@@ -84,6 +88,11 @@ def node(type, group, title, desc="", color="#4a89dc", params=None,
         }
         return fn
     return deco
+
+
+def hide_from_palette(type):
+    """旧版节点: 不再在面板/右键菜单显示, 但旧画布仍可执行"""
+    HIDDEN_LEGACY.append(type)
 
 
 def debug_action(type, name, label):
@@ -107,6 +116,63 @@ def _relay_port(params):
     return (params.get("port") or "").strip() or None
 
 
+@node("relay.ctrl", "电源模块", "继电器电源", "上电 / 断电 / 掉电重启 三合一, 断电间隔可调", "#e8b339",
+      params=[
+          _RELAY_PORT_PARAM,
+          {"name": "action", "label": "动作", "type": "choice", "default": "on",
+           "options": [{"v": "on", "l": "上电"},
+                       {"v": "off", "l": "断电"},
+                       {"v": "cycle", "l": "掉电重启 (断电→上电)"}]},
+          {"name": "channel", "label": "通道", "type": "int", "default": 0},
+          {"name": "off_seconds", "label": "掉电重启断电时长(s)", "type": "float", "default": 15},
+      ],
+      outputs={"ok": "是否成功"},
+      debug=[{"name": "scan_ports", "label": "扫描串口(探测继电器)"},
+             {"name": "probe_channel", "label": "测试通道响应(通→断→通)"}])
+def _relay_ctrl(ctx, params, inputs):
+    ch = int(params.get("channel", 0))
+    action = params.get("action", "on")
+    if action == "on":
+        ctx.ensure_powered(ch)
+    elif action == "off":
+        ctx.power_off(ch)
+    elif action == "cycle":
+        ctx.power_off(ch)
+        time.sleep(float(params.get("off_seconds", 15)))
+        ctx.ensure_powered(ch)
+    else:
+        raise RuntimeError(f"未知动作: {action}")
+    return {"ok": True}
+
+
+@debug_action("relay.ctrl", "scan_ports", "扫描串口")
+def _dbg_scan0(ctx, params):
+    return scan_relay_ports()
+
+
+@debug_action("relay.ctrl", "probe_channel", "测试通道响应")
+def _dbg_probe(ctx, params):
+    relay = ctx.relay(_relay_port(params))
+    ch = int(params.get("channel", 0))
+    o1 = relay.open_channel(ch)
+    c = relay.close_channel(ch)
+    o2 = relay.open_channel(ch)
+    ok = o1 and c and o2
+    return {"ok": ok, "report": f"通道{ch} 导通={o1} 断开={c} 再导通={o2} -> "
+            f"{'继电器响应正常' if ok else '存在失败项, 请检查接线/串口'}"}
+
+
+
+
+_RELAY_PORT_PARAM = {"name": "port", "label": "继电器串口 (空=用 config 默认)",
+                     "type": "port", "default": ""}
+
+
+def _relay_port(params):
+    return (params.get("port") or "").strip() or None
+
+
+hide_from_palette("relay.on")
 @node("relay.on", "电源模块", "继电器上电", "导通指定通道, 给模组上电", "#e8b339",
       params=[_RELAY_PORT_PARAM,
               {"name": "channel", "label": "通道", "type": "int", "default": 0}],
@@ -135,6 +201,7 @@ def _dbg_probe(ctx, params):
             f"{'继电器响应正常' if ok else '存在失败项, 请检查接线/串口'}"}
 
 
+hide_from_palette("relay.off")
 @node("relay.off", "电源模块", "继电器断电", "断开指定通道, 模组掉电", "#e8b339",
       params=[_RELAY_PORT_PARAM,
               {"name": "channel", "label": "通道", "type": "int", "default": 0}],
@@ -145,6 +212,7 @@ def _relay_off(ctx, params, inputs):
     return {"ok": True}
 
 
+hide_from_palette("relay.power_cycle")
 @node("relay.power_cycle", "电源模块", "掉电重启", "断电保持 -> 重新上电 (规范 15s)", "#e8b339",
       params=[_RELAY_PORT_PARAM,
               {"name": "off_seconds", "label": "断电时长(s)", "type": "float", "default": 15}],
@@ -198,6 +266,7 @@ def _dev_configure(ctx, params, inputs):
     return {"ok": dev is not None}
 
 
+hide_from_palette("device.open_video")
 @node("device.open_video", "设备模块", "打开视频流", "device_open_video", "#4a89dc",
       outputs={"ok": "是否成功"})
 def _dev_video(ctx, params, inputs):
@@ -205,6 +274,7 @@ def _dev_video(ctx, params, inputs):
     return {"ok": True}
 
 
+hide_from_palette("device.grab_save")
 @node("device.grab_save", "设备模块", "抓帧存图", "抓一帧并保存到输出目录", "#4a89dc",
       params=[{"name": "name", "label": "文件名前缀", "type": "str", "default": "case_frame"}],
       inputs={"prefix": "文件名前缀(可由上游传入)"},
@@ -218,6 +288,7 @@ def _dev_grab(ctx, params, inputs):
     return {"ok": True, "path": str(path)}
 
 
+hide_from_palette("device.fps")
 @node("device.fps", "设备模块", "读取 FPS", "device_get_fps", "#4a89dc",
       outputs={"fps": "帧率"})
 def _dev_fps(ctx, params, inputs):
@@ -225,6 +296,7 @@ def _dev_fps(ctx, params, inputs):
     return {"fps": round(dev.get_fps(), 2)}
 
 
+hide_from_palette("device.dn")
 @node("device.dn", "设备模块", "读取 DN 亮度", "device_get_current_DN", "#4a89dc",
       outputs={"dn": "DN 值"})
 def _dev_dn(ctx, params, inputs):
@@ -232,6 +304,7 @@ def _dev_dn(ctx, params, inputs):
     return {"dn": round(dev.get_dn(), 2)}
 
 
+hide_from_palette("device.close_video")
 @node("device.close_video", "设备模块", "关闭视频流", "device_close_video", "#4a89dc",
       outputs={"ok": "是否成功"})
 def _dev_close_video(ctx, params, inputs):
@@ -246,110 +319,8 @@ def _dev_close_video(ctx, params, inputs):
 _I2C_MODE_OPTS = ["A1D1", "A1D2", "A1D4", "A2D1", "A2D2", "A2D4", "A4D1", "A4D2", "A4D4"]
 
 
-@node("i2c.rw", "I²C 模块", "I2C 读写模块", "读/写/写并校验 一体的 I2C 模块, 位宽 A1D1~A4D4 任选", "#3faf6e",
-      params=[
-          {"name": "op", "label": "操作", "type": "choice", "default": "read",
-           "options": [{"v": "read", "l": "读寄存器"},
-                       {"v": "write", "l": "写寄存器"},
-                       {"v": "write_verify", "l": "写并校验"}]},
-          {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
-          {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x00d8", "hex": True},
-          {"name": "value", "label": "写入值(写操作时生效)", "type": "str", "default": "0x0001", "hex": True},
-          {"name": "verify", "label": "写后回读校验", "type": "bool", "default": True},
-          {"name": "mode", "label": "位宽模式", "type": "choice", "default": "A2D4", "options": _I2C_MODE_OPTS},
-      ],
-      inputs={"addr": "寄存器地址(可由上游传入)", "value": "写入值(可由上游传入)",
-              "slave": "从机地址(可由上游传入)"},
-      outputs={"ok": "是否成功", "value": "读到的值", "readback": "回读值", "match": "校验一致"})
-def _i2c_rw(ctx, params, inputs):
-    i2c = ctx.i2c()
-    op = params.get("op", "read")
-    slave = _hex(_p("slave")(inputs, params), 0x40)
-    addr = _hex(_p("addr")(inputs, params))
-    addr_len, bits = _mode(params.get("mode", "A2D4"))
 
-    if op == "read":
-        ok, value = i2c.read(addr, slave=slave, addr_len=addr_len, bits=bits)
-        if not ok:
-            raise RuntimeError(f"I2C 读失败 slave=0x{slave:02x} addr=0x{addr:04x} ({addr_len},{bits})")
-        return {"ok": True, "value": value, "readback": None, "match": None}
-
-    # 写 / 写并校验
-    value = _hex(_p("value")(inputs, params))
-    verify = bool(params.get("verify", True)) or op == "write_verify"
-    if not i2c.write(addr, value, slave=slave, addr_len=addr_len, bits=bits):
-        raise RuntimeError(f"I2C 写失败 slave=0x{slave:02x} addr=0x{addr:04x} val=0x{value:x}")
-    if not verify:
-        return {"ok": True, "value": None, "readback": None, "match": None}
-    ok_r, readback = i2c.read(addr, slave=slave, addr_len=addr_len, bits=bits)
-    if not ok_r:
-        raise RuntimeError(f"写后回读失败 addr=0x{addr:04x}")
-    if readback != value:
-        raise RuntimeError(f"写后校验不一致: 写入 0x{value:x}, 回读 0x{readback:x}")
-    return {"ok": True, "value": value, "readback": readback, "match": True}
-
-
-@node("i2c.read", "I²C 模块", "读寄存器(单)", "device_I2C_Read", "#3faf6e",
-      params=[
-          {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
-          {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x00d8", "hex": True},
-          {"name": "mode", "label": "位宽模式", "type": "choice", "default": "A2D4", "options": _I2C_MODE_OPTS},
-      ],
-      inputs={"addr": "寄存器地址(可由上游传入)", "slave": "从机地址(可由上游传入)"},
-      outputs={"ok": "是否成功", "value": "读到的值"})
-def _i2c_read(ctx, params, inputs):
-    i2c = ctx.i2c()
-    slave = _hex(_p("slave")(inputs, params), 0x40)
-    addr = _hex(_p("addr")(inputs, params))
-    addr_len, bits = _mode(params.get("mode", "A2D4"))
-    ok, value = i2c.read(addr, slave=slave, addr_len=addr_len, bits=bits)
-    if not ok:
-        raise RuntimeError(f"I2C 读失败 slave=0x{slave:02x} addr=0x{addr:04x} ({addr_len},{bits})")
-    return {"ok": True, "value": value}
-
-
-@node("i2c.write", "I²C 模块", "写寄存器", "device_I2C_Write, 支持 A2D2/A2D4/A4D4 等位宽", "#3faf6e",
-      params=[
-          {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
-          {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x0918", "hex": True},
-          {"name": "value", "label": "写入值", "type": "str", "default": "0x0001", "hex": True},
-          {"name": "mode", "label": "位宽模式", "type": "choice", "default": "A2D2", "options": _I2C_MODE_OPTS},
-      ],
-      inputs={"addr": "寄存器地址(可由上游传入)", "value": "写入值(可由上游传入)",
-              "slave": "从机地址(可由上游传入)"},
-      outputs={"ok": "是否成功"})
-def _i2c_write(ctx, params, inputs):
-    i2c = ctx.i2c()
-    slave = _hex(_p("slave")(inputs, params), 0x40)
-    addr = _hex(_p("addr")(inputs, params))
-    value = _hex(_p("value")(inputs, params))
-    addr_len, bits = _mode(params.get("mode", "A2D2"))
-    if not i2c.write(addr, value, slave=slave, addr_len=addr_len, bits=bits):
-        raise RuntimeError(f"I2C 写失败 slave=0x{slave:02x} addr=0x{addr:04x} val=0x{value:x}")
-    return {"ok": True}
-
-
-@node("i2c.write_readback", "I²C 模块", "写后回读校验", "写寄存器后回读, 比对是否一致", "#3faf6e",
-      params=[
-          {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
-          {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x0918", "hex": True},
-          {"name": "value", "label": "写入值", "type": "str", "default": "0x0001", "hex": True},
-          {"name": "mode", "label": "位宽模式", "type": "choice", "default": "A2D2", "options": _I2C_MODE_OPTS},
-      ],
-      outputs={"ok": "是否成功", "readback": "回读值", "match": "是否一致"})
-def _i2c_wrb(ctx, params, inputs):
-    i2c = ctx.i2c()
-    slave = _hex(params.get("slave"), 0x40)
-    addr = _hex(params.get("addr"))
-    value = _hex(params.get("value"))
-    addr_len, bits = _mode(params.get("mode", "A2D2"))
-    ok, readback, match = i2c.write_readback(addr, value, slave=slave,
-                                             addr_len=addr_len, bits=bits)
-    if not ok:
-        raise RuntimeError(f"写回读校验失败 addr=0x{addr:04x}")
-    return {"ok": True, "readback": readback, "match": bool(match)}
-
-
+hide_from_palette("i2c.read_regs")
 @node("i2c.read_regs", "I²C 模块", "批量读寄存器", "按逗号分隔的地址列表连续读取", "#3faf6e",
       params=[
           {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
@@ -620,9 +591,293 @@ def _flow_assert(ctx, params, inputs):
     return {"ok": True, "actual": actual}
 
 
+# ============================ 合并节点 (v1.0.6) ============================
+
+# ---- 旧版单寄存器读写节点 (已并入 i2c.batch / 面板隐藏, 保留兼容旧画布) ----
+hide_from_palette("i2c.rw")
+
+
+@node("i2c.rw", "I²C 模块", "I2C 读写模块(旧)", "读/写/写并校验 一体", "#3faf6e",
+      params=[
+          {"name": "op", "label": "操作", "type": "choice", "default": "read",
+           "options": [{"v": "read", "l": "读寄存器"},
+                       {"v": "write", "l": "写寄存器"},
+                       {"v": "write_verify", "l": "写并校验"}]},
+          {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
+          {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x00d8", "hex": True},
+          {"name": "value", "label": "写入值(写操作时生效)", "type": "str", "default": "0x0001", "hex": True},
+          {"name": "verify", "label": "写后回读校验", "type": "bool", "default": True},
+          {"name": "mode", "label": "位宽模式", "type": "choice", "default": "A2D4", "options": _I2C_MODE_OPTS},
+      ],
+      inputs={"addr": "寄存器地址(可由上游传入)", "value": "写入值(可由上游传入)",
+              "slave": "从机地址(可由上游传入)"},
+      outputs={"ok": "是否成功", "value": "读到的值", "readback": "回读值", "match": "校验一致"})
+def _i2c_rw(ctx, params, inputs):
+    i2c = ctx.i2c()
+    op = params.get("op", "read")
+    slave = _hex(_p("slave")(inputs, params), 0x40)
+    addr = _hex(_p("addr")(inputs, params))
+    addr_len, bits = _mode(params.get("mode", "A2D4"))
+
+    if op == "read":
+        ok, value = i2c.read(addr, slave=slave, addr_len=addr_len, bits=bits)
+        if not ok:
+            raise RuntimeError(f"I2C 读失败 slave=0x{slave:02x} addr=0x{addr:04x} ({addr_len},{bits})")
+        return {"ok": True, "value": value, "readback": None, "match": None}
+
+    value = _hex(_p("value")(inputs, params))
+    verify = bool(params.get("verify", True)) or op == "write_verify"
+    if not i2c.write(addr, value, slave=slave, addr_len=addr_len, bits=bits):
+        raise RuntimeError(f"I2C 写失败 slave=0x{slave:02x} addr=0x{addr:04x} val=0x{value:x}")
+    if not verify:
+        return {"ok": True, "value": None, "readback": None, "match": None}
+    ok_r, readback = i2c.read(addr, slave=slave, addr_len=addr_len, bits=bits)
+    if not ok_r:
+        raise RuntimeError(f"写后回读失败 addr=0x{addr:04x}")
+    if readback != value:
+        raise RuntimeError(f"写后校验不一致: 写入 0x{value:x}, 回读 0x{readback:x}")
+    return {"ok": True, "value": value, "readback": readback, "match": True}
+
+
+hide_from_palette("i2c.read")
+
+
+@node("i2c.read", "I²C 模块", "读寄存器(单)", "device_I2C_Read", "#3faf6e",
+      params=[
+          {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
+          {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x00d8", "hex": True},
+          {"name": "mode", "label": "位宽模式", "type": "choice", "default": "A2D4", "options": _I2C_MODE_OPTS},
+      ],
+      inputs={"addr": "寄存器地址(可由上游传入)", "slave": "从机地址(可由上游传入)"},
+      outputs={"ok": "是否成功", "value": "读到的值"})
+def _i2c_read(ctx, params, inputs):
+    i2c = ctx.i2c()
+    slave = _hex(_p("slave")(inputs, params), 0x40)
+    addr = _hex(_p("addr")(inputs, params))
+    addr_len, bits = _mode(params.get("mode", "A2D4"))
+    ok, value = i2c.read(addr, slave=slave, addr_len=addr_len, bits=bits)
+    if not ok:
+        raise RuntimeError(f"I2C 读失败 slave=0x{slave:02x} addr=0x{addr:04x} ({addr_len},{bits})")
+    return {"ok": True, "value": value}
+
+
+hide_from_palette("i2c.write")
+
+
+@node("i2c.write", "I²C 模块", "写寄存器(单)", "device_I2C_Write", "#3faf6e",
+      params=[
+          {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
+          {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x0918", "hex": True},
+          {"name": "value", "label": "写入值", "type": "str", "default": "0x0001", "hex": True},
+          {"name": "mode", "label": "位宽模式", "type": "choice", "default": "A2D2", "options": _I2C_MODE_OPTS},
+      ],
+      inputs={"addr": "寄存器地址(可由上游传入)", "value": "写入值(可由上游传入)",
+              "slave": "从机地址(可由上游传入)"},
+      outputs={"ok": "是否成功"})
+def _i2c_write(ctx, params, inputs):
+    i2c = ctx.i2c()
+    slave = _hex(_p("slave")(inputs, params), 0x40)
+    addr = _hex(_p("addr")(inputs, params))
+    value = _hex(_p("value")(inputs, params))
+    addr_len, bits = _mode(params.get("mode", "A2D2"))
+    if not i2c.write(addr, value, slave=slave, addr_len=addr_len, bits=bits):
+        raise RuntimeError(f"I2C 写失败 slave=0x{slave:02x} addr=0x{addr:04x} val=0x{value:x}")
+    return {"ok": True}
+
+
+hide_from_palette("i2c.write_readback")
+
+
+@node("i2c.write_readback", "I²C 模块", "写后回读校验(单)", "写寄存器后回读, 比对是否一致", "#3faf6e",
+      params=[
+          {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
+          {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x0918", "hex": True},
+          {"name": "value", "label": "写入值", "type": "str", "default": "0x0001", "hex": True},
+          {"name": "mode", "label": "位宽模式", "type": "choice", "default": "A2D2", "options": _I2C_MODE_OPTS},
+      ],
+      outputs={"ok": "是否成功", "readback": "回读值", "match": "是否一致"})
+def _i2c_wrb(ctx, params, inputs):
+    i2c = ctx.i2c()
+    slave = _hex(params.get("slave"), 0x40)
+    addr = _hex(params.get("addr"))
+    value = _hex(params.get("value"))
+    addr_len, bits = _mode(params.get("mode", "A2D2"))
+    ok, readback, match = i2c.write_readback(addr, value, slave=slave,
+                                             addr_len=addr_len, bits=bits)
+    if not ok:
+        raise RuntimeError(f"写回读校验失败 addr=0x{addr:04x}")
+    return {"ok": True, "readback": readback, "match": bool(match)}
+
+
+# ---- 旧版继电器/设备细分节点 (已并入三合一/集成节点, 保留兼容旧画布) ----
+
+_NL = chr(10)  # 换行符 (避免转义问题)
+
+_I2C_OPS_HELP = (
+    "每行一条, # 后为注释:  "
+    "read <地址> [位宽]   |   write <地址> <值> [位宽]   |   "
+    "verify <地址> <值> [位宽] (写并回读校验)   |   "
+    "expect <地址> <期望> [掩码] [右移] [位宽] (读并断言)")
+
+
+@node("i2c.batch", "I²C 模块", "I2C 读写序列", "多寄存器按顺序读写 + 断言 (read/write/verify/expect, 每行一条)", "#3faf6e",
+      params=[
+          {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
+          {"name": "ops", "label": _I2C_OPS_HELP, "type": "textarea",
+           "default": "read 0x00d8 A2D4" + _NL
+                      + "# 断言固件主版本号 == 4" + _NL
+                      + "expect 0x00d8 0x04 0x00FF0000 16 A2D4"},
+          {"name": "mode", "label": "默认位宽模式", "type": "choice", "default": "A2D2", "options": _I2C_MODE_OPTS},
+      ],
+      inputs={"slave": "从机地址(可由上游传入)"},
+      outputs={"ok": "是否全部成功", "results": "逐条结果 JSON"})
+def _i2c_batch(ctx, params, inputs):
+    i2c = ctx.i2c()
+    slave = _hex(_p("slave")(inputs, params), 0x40)
+    default_mode = params.get("mode", "A2D2")
+    results = []
+    for raw in str(params.get("ops", "")).splitlines():
+        line = raw.split("#")[0].strip()
+        if not line:
+            continue
+        parts = line.split()
+        op = parts[0].lower()
+        try:
+            if op == "read":
+                addr = _hex(parts[1]); mode = parts[2] if len(parts) > 2 else default_mode
+                al, bits = _mode(mode)
+                ok, v = i2c.read(addr, slave=slave, addr_len=al, bits=bits)
+                if not ok:
+                    raise RuntimeError(f"读失败 addr=0x{addr:04x}")
+                results.append({"line": line, "ok": True, "detail": f"读得 0x{v:x}"})
+            elif op == "write":
+                addr = _hex(parts[1]); value = _hex(parts[2])
+                mode = parts[3] if len(parts) > 3 else default_mode
+                al, bits = _mode(mode)
+                if not i2c.write(addr, value, slave=slave, addr_len=al, bits=bits):
+                    raise RuntimeError(f"写失败 addr=0x{addr:04x} val=0x{value:x}")
+                results.append({"line": line, "ok": True, "detail": f"已写入 0x{value:x}"})
+            elif op == "verify":
+                addr = _hex(parts[1]); value = _hex(parts[2])
+                mode = parts[3] if len(parts) > 3 else default_mode
+                al, bits = _mode(mode)
+                if not i2c.write(addr, value, slave=slave, addr_len=al, bits=bits):
+                    raise RuntimeError(f"写失败 addr=0x{addr:04x}")
+                okr, back = i2c.read(addr, slave=slave, addr_len=al, bits=bits)
+                if not okr or back != value:
+                    got = f"0x{back:x}" if okr else "读取失败"
+                    raise RuntimeError(f"回读校验不一致: 写 0x{value:x}, 回读 {got}")
+                results.append({"line": line, "ok": True, "detail": f"写并校验通过 (0x{back:x})"})
+            elif op == "expect":
+                addr = _hex(parts[1]); expected = _hex(parts[2])
+                mask = _hex(parts[3], 0xFFFFFFFF) if len(parts) > 3 else 0xFFFFFFFF
+                shift = int(parts[4], 0) if len(parts) > 4 else 0
+                mode = parts[5] if len(parts) > 5 else default_mode
+                al, bits = _mode(mode)
+                okr, v = i2c.read(addr, slave=slave, addr_len=al, bits=bits)
+                if not okr:
+                    raise RuntimeError(f"读失败 addr=0x{addr:04x}")
+                actual = (v & mask) >> shift
+                if actual != expected:
+                    raise RuntimeError(f"断言失败: (0x{v:x} & 0x{mask:x}) >> {shift}"
+                                       f" = 0x{actual:x}, 期望 0x{expected:x}")
+                results.append({"line": line, "ok": True, "detail": f"断言通过 (实际 0x{actual:x})"})
+            else:
+                raise RuntimeError(f"未知操作 {op!r} (支持 read/write/verify/expect)")
+        except RuntimeError as e:
+            results.append({"line": line, "ok": False, "detail": str(e)})
+            done = "; ".join(r["line"] + " => " + r["detail"] for r in results)
+            raise RuntimeError(f"第 {len(results)} 条失败 [{line}]: {e}  | 已执行: {done}")
+    if not results:
+        raise RuntimeError("操作序列为空 (每行一条: read/write/verify/expect)")
+    logger.info("I2C 序列完成: %d 条全部通过", len(results))
+    return {"ok": True, "results": results}
+
+
+@node("relay.ctrl", "电源模块", "继电器电源", "上电 / 断电 / 掉电重启 三合一, 断电间隔可调", "#e8b339",
+      params=[
+          _RELAY_PORT_PARAM,
+          {"name": "action", "label": "动作", "type": "choice", "default": "on",
+           "options": [{"v": "on", "l": "上电"},
+                       {"v": "off", "l": "断电"},
+                       {"v": "cycle", "l": "掉电重启 (断电→上电)"}]},
+          {"name": "channel", "label": "通道", "type": "int", "default": 0},
+          {"name": "off_seconds", "label": "掉电重启断电时长(s)", "type": "float", "default": 15},
+      ],
+      outputs={"ok": "是否成功"},
+      debug=[{"name": "scan_ports", "label": "扫描串口(探测继电器)"},
+             {"name": "probe_channel", "label": "测试通道响应(通→断→通)"}])
+def _relay_ctrl(ctx, params, inputs):
+    ch = int(params.get("channel", 0))
+    action = params.get("action", "on")
+    if action == "on":
+        ctx.ensure_powered(ch)
+    elif action == "off":
+        ctx.power_off(ch)
+    elif action == "cycle":
+        ctx.power_off(ch)
+        time.sleep(float(params.get("off_seconds", 15)))
+        ctx.ensure_powered(ch)
+    else:
+        raise RuntimeError(f"未知动作: {action}")
+    return {"ok": True}
+
+
+@debug_action("relay.ctrl", "scan_ports", "扫描串口")
+def _dbg_scan_ctrl(ctx, params):
+    return scan_relay_ports()
+
+
+@debug_action("relay.ctrl", "probe_channel", "测试通道响应")
+def _dbg_probe_ctrl(ctx, params):
+    relay = ctx.relay(_relay_port(params))
+    ch = int(params.get("channel", 0))
+    o1 = relay.open_channel(ch)
+    c = relay.close_channel(ch)
+    o2 = relay.open_channel(ch)
+    ok = o1 and c and o2
+    return {"ok": ok, "report": f"通道{ch} 导通={o1} 断开={c} 再导通={o2} -> "
+            f"{'继电器响应正常' if ok else '存在失败项, 请检查接线/串口'}"}
+
+
+@node("device.stream", "设备模块", "设备出图(集成)", "ini 配置 -> 打开视频流 -> 可选: 抓帧存图 / 读FPS / 读DN (勾选生效)", "#4a89dc",
+      params=[
+          {"name": "ini", "label": "ini 文件 (空=用 config 默认)", "type": "choice",
+           "default": None, "options": _ini_options(), "optional": True},
+          {"name": "open_video", "label": "打开视频流", "type": "bool", "default": True},
+          {"name": "capture", "label": "抓帧存图", "type": "bool", "default": False},
+          {"name": "read_fps", "label": "读取 FPS", "type": "bool", "default": False},
+          {"name": "read_dn", "label": "读取 DN 亮度", "type": "bool", "default": False},
+          {"name": "name", "label": "抓帧文件名前缀", "type": "str", "default": "case_frame"},
+      ],
+      outputs={"ok": "是否成功", "path": "图片路径", "fps": "帧率", "dn": "DN 亮度"})
+def _dev_stream(ctx, params, inputs):
+    ini = params.get("ini")
+    ini_path = str(ROOT / "configs" / "init_file" / Path(ini).name) if ini else None
+    dev = ctx.ensure_configured(ini_path) if ini_path else ctx.ensure_configured()
+    outs = {"ok": True, "path": None, "fps": None, "dn": None}
+    if params.get("open_video", True):
+        ctx.ensure_video()
+    else:
+        return outs
+    if params.get("capture"):
+        ok, path = ctx.image().capture(dev, str(params.get("name", "case_frame")))
+        if not ok:
+            raise RuntimeError("抓帧存图失败 (可重试或掉电重启模组)")
+        outs["path"] = str(path)
+    if params.get("read_fps"):
+        outs["fps"] = round(dev.get_fps(), 2)
+    if params.get("read_dn"):
+        outs["dn"] = round(dev.get_dn(), 2)
+    return outs
+
+
 def get_registry():
     """返回给前端的节点 schema (去掉 run 函数)"""
-    return [{k: v for k, v in n.items() if k != "run"} for n in NODES.values()]
+    all_nodes = [{k: v for k, v in n.items() if k != "run"} for n in NODES.values()]
+    for n in all_nodes:
+        n["hidden"] = n["type"] in HIDDEN_LEGACY
+    return all_nodes
 
 
 def get_node(type):

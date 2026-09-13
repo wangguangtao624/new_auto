@@ -3,19 +3,10 @@
   "stop_on_fail": true,
   "nodes": [
     {
-      "id": "n1",
-      "type": "relay.on",
-      "x": 12,
-      "y": 74.4,
-      "params": {
-        "channel": 0
-      }
-    },
-    {
       "id": "nabm3r",
       "type": "relay.power_cycle",
-      "x": -244.4,
-      "y": 138.2,
+      "x": 45.99999999999997,
+      "y": 160.6,
       "params": {
         "port": "",
         "off_seconds": 15
@@ -38,8 +29,8 @@
     {
       "id": "npt142",
       "type": "i2c.read",
-      "x": 700.3999999999999,
-      "y": 543.5999999999999,
+      "x": 473.9999999999999,
+      "y": 529.9999999999999,
       "params": {
         "slave": "0x40",
         "addr": "0x00cc",
@@ -56,33 +47,40 @@
       }
     },
     {
-      "id": "nxuv4s",
-      "type": "flow.assert_value",
-      "x": 724.8,
-      "y": 699.8,
+      "id": "n3mx3u",
+      "type": "device.fps",
+      "x": 477.2,
+      "y": 649,
+      "params": {}
+    },
+    {
+      "id": "nz04ac",
+      "type": "device.dn",
+      "x": 751.4,
+      "y": 439.2,
+      "params": {}
+    },
+    {
+      "id": "njft2d",
+      "type": "device.grab_save",
+      "x": 491.2,
+      "y": 746,
       "params": {
-        "mask": "0xFFFFFFFF",
-        "shift": 0,
-        "op": "!=",
-        "expected": "0x1"
+        "name": "case_frame"
+      }
+    },
+    {
+      "id": "nk0y3c",
+      "type": "relay.off",
+      "x": 763.6,
+      "y": 557.6,
+      "params": {
+        "port": "",
+        "channel": 0
       }
     }
   ],
   "edges": [
-    {
-      "from": "nabm3r",
-      "fromPort": "__out",
-      "to": "n1",
-      "toParam": "__in",
-      "kind": "flow"
-    },
-    {
-      "from": "n1",
-      "fromPort": "__out",
-      "to": "n82ajw",
-      "toParam": "__in",
-      "kind": "flow"
-    },
     {
       "from": "n82ajw",
       "fromPort": "__out",
@@ -105,16 +103,44 @@
       "kind": "flow"
     },
     {
+      "from": "nabm3r",
+      "fromPort": "__out",
+      "to": "n82ajw",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
       "from": "npt142",
       "fromPort": "__out",
-      "to": "nxuv4s",
+      "to": "n3mx3u",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n3mx3u",
+      "fromPort": "__out",
+      "to": "njft2d",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "njft2d",
+      "fromPort": "__out",
+      "to": "nz04ac",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "nz04ac",
+      "fromPort": "__out",
+      "to": "nk0y3c",
       "toParam": "__in",
       "kind": "flow"
     }
   ],
   "view": {
-    "x": 410,
-    "y": 203,
+    "x": 396,
+    "y": 103,
     "z": 1.25
   }
 }
