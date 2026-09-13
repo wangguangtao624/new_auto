@@ -19,7 +19,7 @@ const ZOOM_MIN = 0.3, ZOOM_MAX = 2.5;
 let conn = null;
 let clipboard = null;
 
-const GROUP_ORDER = ["电源模块", "设备模块", "FMC 模块", "检查模块", "固件模块", "流程工具"];
+const GROUP_ORDER = ["电源模块", "设备模块", "I²C 模块", "检查模块", "固件模块", "流程工具"];
 const FLOW_IN = "__in", FLOW_OUT = "__out";
 
 /* ---------------- API ---------------- */
@@ -136,9 +136,21 @@ function portPos(node, kind, name) {
   return { x: kind === "out" ? node.x + nodeW(node) : node.x, y };
 }
 const flowPos = (node, kind) => ({
-  x: kind === "out" ? node.x + nodeW(node) / 2 + 10 : node.x + nodeW(node) / 2 - 10,
-  y: node.y,
+  x: kind === "out" ? node.x + nodeW(node) : node.x,
+  y: node.y + 21,
 });
+
+/* 丝滑连线: 前向用横向贝塞尔, 后向(目标在左侧)按垂直距离外扩, 避免怪异小回环 */
+function edgePath(x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = Math.abs(y2 - y1);
+  let off;
+  if (dx >= -20) {
+    off = Math.max(36, Math.min(190, dx * 0.55 + dy * 0.08));
+  } else {
+    off = Math.max(60, Math.min(190, Math.abs(dx) * 0.18 + dy * 0.35 + 40));
+  }
+  return `M ${x1} ${y1} C ${x1 + off} ${y1}, ${x2 - off} ${y2}, ${x2} ${y2}`;
+}
 
 /* ---------------- 画布渲染 (世界坐标) ---------------- */
 function renderAll() {
@@ -168,12 +180,12 @@ function renderNode(node) {
   $(".node-run", el).addEventListener("mousedown", (e) => e.stopPropagation());
   $(".node-run", el).addEventListener("click", (e) => { e.stopPropagation(); runSingleNode(node); });
 
-  // 执行流端口 (顶部两角, 金色方块)
-  const fin = mkPort(el, "flow-in", "入", "执行流入 —— 点它连接上游");
-  fin.style.left = "-7px"; fin.style.top = "-6px";
+  // 执行流端口 (标题栏两侧, 金色方块): 左=接上游, 右=接下游
+  const fin = mkPort(el, "flow-in", "", "执行流入 —— 上游节点连这里");
+  fin.style.left = "-7px"; fin.style.top = "15px";
   fin.dataset.node = node.id; fin.dataset.flow = "in";
-  const fout = mkPort(el, "flow-out", "出", "执行流出 —— 按住/点它连到下游");
-  fout.style.right = "-7px"; fout.style.top = "-6px";
+  const fout = mkPort(el, "flow-out", "", "执行流出 —— 连到下游节点");
+  fout.style.right = "-7px"; fout.style.top = "15px";
   fout.dataset.node = node.id; fout.dataset.flow = "out";
   fin.addEventListener("mousedown", (e) => startConn(e, "in"));
   fout.addEventListener("mousedown", (e) => startConn(e, "out"));
@@ -210,9 +222,8 @@ function drawWires(tempLine) {
   if (!svg) return;
   $$("#wires path.edge", svg).forEach((p) => p.remove());
   const draw = (x1, y1, x2, y2, kind, edge) => {
-    const dx = Math.max(40, Math.abs(x2 - x1) * 0.5);
     const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    p.setAttribute("d", `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`);
+    p.setAttribute("d", edgePath(x1, y1, x2, y2));
     if (kind === "flow") {
       p.setAttribute("stroke", "#e8b339"); p.setAttribute("stroke-width", 3);
       p.setAttribute("marker-end", "url(#arrow-flow)");
@@ -652,60 +663,103 @@ async function saveCanvas() {
 }
 
 /* ---------------- 运行与报告 ---------------- */
-function clearStatusBadges() {
-  $$(".node").forEach((n) => {
-    n.classList.remove("st-pass", "st-fail", "st-skip");
-    const st = $(".node-status", n);
-    if (st) { st.textContent = ""; st.className = "node-status"; }
-  });
-}
 function markNode(id, status, outputs, error) {
   const el = $("#node-" + id);
   if (!el) return;
-  el.classList.remove("st-pass", "st-fail", "st-skip");
-  el.classList.add("st-" + (status === "passed" ? "pass" : status === "failed" ? "fail" : "skip"));
+  el.classList.remove("st-pass", "st-fail", "st-skip", "st-run");
+  const cls = status === "passed" ? "pass" : status === "failed" ? "fail"
+            : status === "running" ? "run" : "skip";
+  el.classList.add("st-" + cls);
   const st = $(".node-status", el);
   if (st) {
-    const tag = status === "passed" ? "✓" : status === "failed" ? "✗" : "–";
+    const tag = status === "passed" ? "✓" : status === "failed" ? "✗"
+              : status === "running" ? "⏳" : "–";
     let extra = "";
     if (outputs && Object.keys(outputs).length)
       extra = " " + Object.entries(outputs)
         .filter(([k]) => k !== "ok")
         .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : v}`).join(" ");
-    st.className = "node-status st-" + (status === "passed" ? "pass" : status === "failed" ? "fail" : "skip");
+    st.className = "node-status st-" + cls;
     st.textContent = tag + " " + (error ? error.slice(0, 90) : extra.slice(0, 110));
   }
 }
+function clearStatusBadges() {
+  $$(".node").forEach((n) => {
+    n.classList.remove("st-pass", "st-fail", "st-skip", "st-run");
+    const st = $(".node-status", n);
+    if (st) { st.textContent = ""; st.className = "node-status"; }
+  });
+}
+
+/* ---------------- 运行监控坞 ---------------- */
+let pollTimer = null, seenLogs = 0;
+
+function dockOpen() { $("#rundock").classList.remove("collapsed"); }
+function dockSetDot(cls, info) {
+  $("#dock-dot").className = cls;
+  $("#dock-info").textContent = info || "";
+}
+function dockLog(t, cls, text) {
+  const body = $("#dock-body");
+  const line = document.createElement("div");
+  line.className = "dl " + (cls || "");
+  line.innerHTML = `<span class="t">[${esc(t)}]</span>${esc(text)}`;
+  body.appendChild(line);
+  body.scrollTop = body.scrollHeight;
+}
+function dockClear() { $("#dock-body").innerHTML = ""; seenLogs = 0; }
+
 async function runCanvas() {
   await saveCanvas();
   clearStatusBadges();
-  setStatus("运行中…");
+  dockClear();
+  dockOpen();
+  dockSetDot("running", "启动中…");
   $("#btn-run").disabled = true;
   try {
-    const report = await jpost("/api/run/" + encodeURIComponent(canvas.name),
-                               { stop_on_fail: $("#chk-stopfail").checked });
-    for (const n of report.nodes) markNode(n.id, n.status, n.outputs, n.error);
-    showReport(report);
-    setStatus(report.ok ? "运行完成: 全部通过 ✓" : "运行失败 ✗", report.ok ? "ok" : "err");
+    const { run_id } = await jpost("/api/run/" + encodeURIComponent(canvas.name),
+                                   { stop_on_fail: $("#chk-stopfail").checked });
+    setStatus("运行中… (下方监控窗口实时查看)");
+    dockSetDot("running", "运行中…");
+    await pollRun(run_id);
   } catch (e) {
+    dockSetDot("fail", "启动失败");
+    dockLog(timeStr(), "fail", "启动失败: " + e.message);
     setStatus("运行出错: " + e.message, "err");
-    alert("运行出错: " + e.message);
   } finally { $("#btn-run").disabled = false; }
 }
-function showReport(report) {
-  $("#runlog").classList.remove("hidden");
-  const sum = $("#runlog-summary");
-  sum.textContent = report.ok ? " ✓ 全部通过" : " ✗ 存在失败";
-  sum.className = report.ok ? "ok" : "err";
-  $("#runlog-body").innerHTML = report.nodes.map((n) => `
-    <div class="rl-node">
-      <span class="st-${n.status}">${n.status === "passed" ? "✓" : n.status === "failed" ? "✗" : "–"}</span>
-      <b>${esc(n.title)}</b><span style="color:var(--dim)">(${n.ms}ms)</span>
-      ${n.error ? `<div class="rl-err">${esc(n.error)}</div>` : ""}
-      ${n.outputs && Object.keys(n.outputs).filter((k) => k !== "ok").length
-        ? `<div class="rl-outs">${Object.entries(n.outputs).filter(([k]) => k !== "ok")
-            .map(([k, v]) => `${esc(k)}=${esc(typeof v === "object" ? JSON.stringify(v) : String(v))}`).join("  ")}</div>` : ""}
-    </div>`).join("");
+const timeStr = () => new Date().toTimeString().slice(0, 8);
+
+async function pollRun(runId) {
+  return new Promise((resolve) => {
+    pollTimer = setInterval(async () => {
+      try {
+        const r = await jfetch("/api/runs/" + runId);
+        const rep = r.report;
+        // 实时日志 (增量)
+        for (; seenLogs < rep.log.length; seenLogs++) {
+          const l = rep.log[seenLogs];
+          dockLog(l.t, l.cls, l.text);
+        }
+        // 节点状态徽章
+        for (const n of rep.nodes) markNode(n.id, n.status, n.outputs, n.error);
+        if (r.current) markNode(r.current, "running");
+        const done = rep.nodes.filter((n) => n.status !== "skipped").length;
+        dockSetDot("running", `运行中… ${done}/${rep.nodes.length || "?"} 节点`);
+        if (r.status !== "running") {
+          clearInterval(pollTimer); pollTimer = null;
+          dockSetDot(rep.ok ? "pass" : "fail",
+            `运行${rep.ok ? "完成: 全部通过 ✓" : "失败 ✗"} (开始于 ${rep.started})`);
+          setStatus(rep.ok ? "运行完成: 全部通过 ✓" : "运行失败 ✗", rep.ok ? "ok" : "err");
+          resolve(rep);
+        }
+      } catch (e) {
+        clearInterval(pollTimer); pollTimer = null;
+        dockSetDot("fail", "轮询失败");
+        resolve(null);
+      }
+    }, 500);
+  });
 }
 
 /* ---------------- 初始化 ---------------- */
@@ -756,6 +810,9 @@ async function init() {
     alert("用例代码已生成:\n" + r.file + "\n\n运行: python app/cases/" + canvas.name + ".py");
   });
   $("#btn-help").addEventListener("click", () => $("#help-overlay").classList.remove("hidden"));
+  $("#dock-toggle").addEventListener("click", () => $("#rundock").classList.toggle("collapsed"));
+  $("#dock-head").addEventListener("dblclick", () => $("#rundock").classList.toggle("collapsed"));
+  $("#dock-clear").addEventListener("click", dockClear);
 
   await refreshCanvasList();
   const names = $$("#canvas-list option").map((o) => o.textContent);

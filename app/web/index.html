@@ -39,20 +39,22 @@
       <button id="zoom-in" title="放大">＋</button>
       <button id="zoom-fit" title="内容居中">⛶</button>
     </div>
+    <div id="rundock" class="collapsed">
+      <div class="dock-head" id="dock-head">
+        <span id="dock-dot"></span><b>运行监控</b>
+        <span id="dock-info">空闲</span>
+        <span class="dock-spacer"></span>
+        <button id="dock-clear" title="清空日志">清空</button>
+        <button id="dock-toggle" title="展开/收起">⌃</button>
+      </div>
+      <div id="dock-body"></div>
+    </div>
   </div>
 
   <div id="inspector">
     <div class="ins-title">属性 / 调试</div>
     <div id="ins-body" class="ins-empty">点击节点编辑参数</div>
   </div>
-</div>
-
-<div id="runlog" class="hidden">
-  <div class="runlog-head">
-    <b>运行报告</b><span id="runlog-summary"></span>
-    <button onclick="document.getElementById('runlog').classList.add('hidden')">✕</button>
-  </div>
-  <div id="runlog-body"></div>
 </div>
 
 <div id="help-overlay" class="hidden">

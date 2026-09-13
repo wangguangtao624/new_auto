@@ -1,0 +1,120 @@
+{
+  "name": "55",
+  "stop_on_fail": true,
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "relay.on",
+      "x": 12,
+      "y": 74.4,
+      "params": {
+        "channel": 0
+      }
+    },
+    {
+      "id": "nabm3r",
+      "type": "relay.power_cycle",
+      "x": -244.4,
+      "y": 138.2,
+      "params": {
+        "port": "",
+        "off_seconds": 15
+      }
+    },
+    {
+      "id": "nlyh8y",
+      "type": "device.open_video",
+      "x": 241.2,
+      "y": 396,
+      "params": {}
+    },
+    {
+      "id": "n82ajw",
+      "type": "device.configure",
+      "x": 287,
+      "y": 205.6,
+      "params": {}
+    },
+    {
+      "id": "npt142",
+      "type": "i2c.read",
+      "x": 700.3999999999999,
+      "y": 543.5999999999999,
+      "params": {
+        "slave": "0x40",
+        "addr": "0x00cc",
+        "mode": "A2D4"
+      }
+    },
+    {
+      "id": "n5hic8",
+      "type": "flow.delay",
+      "x": 485.6,
+      "y": 396.4,
+      "params": {
+        "seconds": 3
+      }
+    },
+    {
+      "id": "nxuv4s",
+      "type": "flow.assert_value",
+      "x": 724.8,
+      "y": 699.8,
+      "params": {
+        "mask": "0xFFFFFFFF",
+        "shift": 0,
+        "op": "!=",
+        "expected": "0x1"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "nabm3r",
+      "fromPort": "__out",
+      "to": "n1",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n1",
+      "fromPort": "__out",
+      "to": "n82ajw",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n82ajw",
+      "fromPort": "__out",
+      "to": "nlyh8y",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "nlyh8y",
+      "fromPort": "__out",
+      "to": "n5hic8",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n5hic8",
+      "fromPort": "__out",
+      "to": "npt142",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "npt142",
+      "fromPort": "__out",
+      "to": "nxuv4s",
+      "toParam": "__in",
+      "kind": "flow"
+    }
+  ],
+  "view": {
+    "x": 410,
+    "y": 203,
+    "z": 1.25
+  }
+}

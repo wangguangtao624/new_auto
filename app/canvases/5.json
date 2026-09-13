@@ -1,0 +1,21 @@
+{
+  "name": "5",
+  "stop_on_fail": true,
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "relay.on",
+      "x": 0,
+      "y": 0,
+      "params": {
+        "channel": 0
+      }
+    }
+  ],
+  "edges": [],
+  "view": {
+    "x": 410,
+    "y": 203,
+    "z": 1.25
+  }
+}

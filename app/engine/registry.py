@@ -246,7 +246,7 @@ def _dev_close_video(ctx, params, inputs):
 _I2C_MODE_OPTS = ["A1D1", "A1D2", "A1D4", "A2D1", "A2D2", "A2D4", "A4D1", "A4D2", "A4D4"]
 
 
-@node("i2c.rw", "FMC 模块", "I2C 读写模块", "读/写/写并校验 一体的 I2C 模块, 位宽 A1D1~A4D4 任选", "#3faf6e",
+@node("i2c.rw", "I²C 模块", "I2C 读写模块", "读/写/写并校验 一体的 I2C 模块, 位宽 A1D1~A4D4 任选", "#3faf6e",
       params=[
           {"name": "op", "label": "操作", "type": "choice", "default": "read",
            "options": [{"v": "read", "l": "读寄存器"},
@@ -289,7 +289,7 @@ def _i2c_rw(ctx, params, inputs):
     return {"ok": True, "value": value, "readback": readback, "match": True}
 
 
-@node("i2c.read", "FMC 模块", "读寄存器(单)", "device_I2C_Read", "#3faf6e",
+@node("i2c.read", "I²C 模块", "读寄存器(单)", "device_I2C_Read", "#3faf6e",
       params=[
           {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
           {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x00d8", "hex": True},
@@ -308,7 +308,7 @@ def _i2c_read(ctx, params, inputs):
     return {"ok": True, "value": value}
 
 
-@node("i2c.write", "FMC 模块", "写寄存器", "device_I2C_Write, 支持 A2D2/A2D4/A4D4 等位宽", "#3faf6e",
+@node("i2c.write", "I²C 模块", "写寄存器", "device_I2C_Write, 支持 A2D2/A2D4/A4D4 等位宽", "#3faf6e",
       params=[
           {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
           {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x0918", "hex": True},
@@ -329,7 +329,7 @@ def _i2c_write(ctx, params, inputs):
     return {"ok": True}
 
 
-@node("i2c.write_readback", "FMC 模块", "写后回读校验", "写寄存器后回读, 比对是否一致", "#3faf6e",
+@node("i2c.write_readback", "I²C 模块", "写后回读校验", "写寄存器后回读, 比对是否一致", "#3faf6e",
       params=[
           {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
           {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x0918", "hex": True},
@@ -350,7 +350,7 @@ def _i2c_wrb(ctx, params, inputs):
     return {"ok": True, "readback": readback, "match": bool(match)}
 
 
-@node("i2c.read_regs", "FMC 模块", "批量读寄存器", "按逗号分隔的地址列表连续读取", "#3faf6e",
+@node("i2c.read_regs", "I²C 模块", "批量读寄存器", "按逗号分隔的地址列表连续读取", "#3faf6e",
       params=[
           {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
           {"name": "addrs", "label": "地址列表(逗号分隔)", "type": "str", "default": "0x00d8,0x00c0,0x00c4"},

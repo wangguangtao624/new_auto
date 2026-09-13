@@ -56,9 +56,11 @@ def topo_sort(nodes, edges):
     return order, by_id, adj
 
 
-def run_canvas(canvas: dict, config_path=None, stop_on_fail=None):
+def run_canvas(canvas: dict, config_path=None, stop_on_fail=None, on_event=None):
     """执行一个画布
 
+    :param on_event: 实时事件回调 fn(dict); 事件形如
+        {"event":"start","id":...} / {"event":"finish","entry":{...}} / {"event":"done"}
     :return: 运行报告 dict
     """
     nodes = canvas.get("nodes", [])
@@ -79,11 +81,20 @@ def run_canvas(canvas: dict, config_path=None, stop_on_fail=None):
 
     ctx = Session(config_path)
     report = {"ok": True, "name": canvas.get("name", "unnamed"),
-              "nodes": [], "started": time.strftime("%Y-%m-%d %H:%M:%S"),
+              "nodes": [], "log": [],
+              "started": time.strftime("%Y-%m-%d %H:%M:%S"),
               "stop_on_fail": stop_on_fail}
     outputs_by_node = {}
     aborted = False
 
+    def emit(ev):
+        if on_event:
+            try:
+                on_event(ev)
+            except Exception:
+                pass
+
+    emit({"event": "start_total", "total": len(order)})
     try:
         for nid in order:
             node = by_id[nid]
@@ -93,8 +104,9 @@ def run_canvas(canvas: dict, config_path=None, stop_on_fail=None):
                 "title": NODES[ntype]["title"] if ntype in NODES else ntype,
                 "status": "skipped", "outputs": {}, "error": None, "ms": 0,
             }
+            report["nodes"].append(entry)
             if aborted:
-                report["nodes"].append(entry)
+                emit({"event": "finish", "entry": entry})
                 continue
 
             spec = get_node(ntype)
@@ -103,6 +115,7 @@ def run_canvas(canvas: dict, config_path=None, stop_on_fail=None):
             for param, (src, port) in incoming.get(nid, {}).items():
                 inputs[param] = outputs_by_node.get(src, {}).get(port)
 
+            emit({"event": "start", "id": nid, "title": entry["title"]})
             t0 = time.time()
             try:
                 outs = spec["run"](ctx, node.get("params", {}), inputs) or {}
@@ -116,7 +129,7 @@ def run_canvas(canvas: dict, config_path=None, stop_on_fail=None):
                 if stop_on_fail:
                     aborted = True
             entry["ms"] = int((time.time() - t0) * 1000)
-            report["nodes"].append(entry)
+            emit({"event": "finish", "entry": entry})
     finally:
         try:
             ctx.close()
@@ -126,4 +139,5 @@ def run_canvas(canvas: dict, config_path=None, stop_on_fail=None):
     if aborted or any(n["status"] == "failed" for n in report["nodes"]):
         report["ok"] = False
     report["finished"] = time.strftime("%H:%M:%S")
+    emit({"event": "done", "ok": report["ok"]})
     return report

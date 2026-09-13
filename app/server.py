@@ -19,6 +19,8 @@ import json
 import logging
 import sys
 import threading
+import time
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -39,8 +41,51 @@ WEB_DIR = APP_DIR / "web"
 
 logger = logging.getLogger("new_auto.server")
 
-# 同一时间只允许一个硬件 run
+# 同一时间只允许一个硬件运行; RUNS 保存每次运行的实时报告供前端轮询
 _RUN_LOCK = threading.Lock()
+_RUNS = {}   # run_id -> {"status": running|done|error, "report": {...}}
+
+
+def _run_thread(run_id, canvas, stop_on_fail):
+    rec = _RUNS[run_id]
+
+    def on_event(ev):
+        kind = ev.get("event")
+        if kind == "start":
+            rec["report"]["log"].append(
+                {"t": time.strftime("%H:%M:%S"), "cls": "run",
+                 "text": f"▶ [{ev['id']}] {ev['title']} 执行中…"})
+            rec["current"] = ev["id"]
+        elif kind == "finish":
+            entry = ev["entry"]
+            if entry["status"] == "passed":
+                outs = {k: v for k, v in entry["outputs"].items() if k != "ok"}
+                tail = ("  " + "  ".join(f"{k}={v}" for k, v in outs.items())) if outs else ""
+                rec["report"]["log"].append(
+                    {"t": time.strftime("%H:%M:%S"), "cls": "pass",
+                     "text": f"✓ [{entry['id']}] {entry['title']} 通过 ({entry['ms']}ms){tail}"})
+            elif entry["status"] == "failed":
+                rec["report"]["log"].append(
+                    {"t": time.strftime("%H:%M:%S"), "cls": "fail",
+                     "text": f"✗ [{entry['id']}] {entry['title']} 失败: {entry['error']}"})
+            rec["report"]["nodes"] = [
+                n for n in rec["report"]["nodes"] if n["id"] != entry["id"]] + [entry]
+        elif kind == "done":
+            rec["report"]["log"].append(
+                {"t": time.strftime("%H:%M:%S"), "cls": "run",
+                 "text": "== 运行结束: " + ("全部通过 ✓" if ev["ok"] else "存在失败 ✗") + " =="})
+
+    try:
+        report = run_canvas(canvas, stop_on_fail=stop_on_fail, on_event=on_event)
+        rec["report"].update(report)
+        rec["status"] = "done"
+    except Exception as e:
+        logger.exception("运行异常")
+        rec["status"] = "error"
+        rec["report"]["log"].append(
+            {"t": time.strftime("%H:%M:%S"), "cls": "fail", "text": f"运行异常: {e}"})
+    finally:
+        _RUN_LOCK.release()
 
 
 def _demo_canvas():
@@ -129,6 +174,13 @@ class Handler(BaseHTTPRequestHandler):
             if not f.exists():
                 return self._json({"error": f"画布不存在: {name}"}, 404)
             return self._json(json.loads(f.read_text(encoding="utf-8")))
+        if path.startswith("/api/runs/"):
+            run_id = path[len("/api/runs/"):]
+            rec = _RUNS.get(run_id)
+            if not rec:
+                return self._json({"error": f"运行不存在: {run_id}"}, 404)
+            return self._json({"status": rec["status"], "report": rec["report"],
+                               "current": rec.get("current")})
         return self._json({"error": f"未知路径 {path}"}, 404)
 
     def do_PUT(self):
@@ -197,6 +249,7 @@ class Handler(BaseHTTPRequestHandler):
             finally:
                 _RUN_LOCK.release()
         if path.startswith("/api/run/"):
+            """异步启动运行: 返回 run_id, 前端轮询 /api/runs/<id> 获取实时报告"""
             name = path[len("/api/run/"):]
             f = CANVAS_DIR / f"{name}.json"
             if not f.exists():
@@ -206,16 +259,14 @@ class Handler(BaseHTTPRequestHandler):
             stop = body.get("stop_on_fail")
             if not _RUN_LOCK.acquire(blocking=False):
                 return self._json({"error": "已有一次运行在进行中, 请稍候"}, 409)
-            try:
-                report = run_canvas(canvas, stop_on_fail=stop)
-                return self._json(report)
-            except CanvasError as e:
-                return self._json({"error": str(e)}, 400)
-            except Exception as e:
-                logger.exception("运行异常")
-                return self._json({"error": f"运行异常: {e}"}, 500)
-            finally:
-                _RUN_LOCK.release()
+            run_id = uuid.uuid4().hex[:8]
+            _RUNS[run_id] = {"status": "running",
+                             "report": {"ok": True, "name": name, "nodes": [], "log": [],
+                                        "started": time.strftime("%H:%M:%S")},
+                             "current": None}
+            threading.Thread(target=_run_thread, args=(run_id, canvas, stop),
+                             daemon=True).start()
+            return self._json({"run_id": run_id})
         if path.startswith("/api/gencode/"):
             name = path[len("/api/gencode/"):]
             f = CANVAS_DIR / f"{name}.json"
