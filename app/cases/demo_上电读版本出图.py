@@ -19,7 +19,15 @@ _I_MODE = {'A1D1': (8, 8), 'A1D2': (8, 16), 'A1D4': (8, 32),
 
 def main():
     ctx = Session()
-    ctx.ensure_powered(0)
+    ctx.ensure_video()
+
+    vn6_ok, vn6_path = ctx.image().capture(ctx.ensure_video(), 'demo')
+    assert vn6_ok, '抓帧失败'
+
+    vn7_fps = ctx.ensure_video().get_fps()
+    print('[device.fps] fps =', vn7_fps)
+
+    ctx.power_off(0)
 
     _m = _I_MODE['A2D4']
     vn3_ok, vn3_value = ctx.i2c().read(0xd8, slave=0x40, addr_len=_m[0], bits=_m[1])
@@ -34,15 +42,7 @@ def main():
 
     ctx.ensure_configured(ctx.default_ini())
 
-    ctx.ensure_video()
-
-    vn6_ok, vn6_path = ctx.image().capture(ctx.ensure_video(), 'demo')
-    assert vn6_ok, '抓帧失败'
-
-    vn7_fps = ctx.ensure_video().get_fps()
-    print('[device.fps] fps =', vn7_fps)
-
-    ctx.power_off(0)
+    ctx.ensure_powered(0)
 
     print('用例执行完成: 全部节点通过')
 

@@ -33,6 +33,7 @@ class Session:
         with open(cfg_path, "r", encoding="utf-8") as f:
             self.cfg = json.load(f)
         self._relay = None
+        self._relay_port = None
         self._device = None
         self._i2c = None
         self._image = None
@@ -46,10 +47,19 @@ class Session:
 
     # ------------------------------------------------------------ 控制器
 
-    def relay(self) -> RelayController:
-        if self._relay is None:
-            self._relay = RelayController(self.cfg["relay"]["port"])
+    def relay(self, port: str = None) -> RelayController:
+        """继电器控制器; port 为空用 config 默认, 否则用指定串口 (按串口缓存)"""
+        want = port or self.cfg["relay"]["port"]
+        if self._relay is None or self._relay_port != want:
+            # 先释放已缓存的串口连接 (switcher_close 会释放 COM 口)
+            if self._relay is not None:
+                try:
+                    self._relay.close()
+                except Exception:
+                    pass
+            self._relay = RelayController(want)
             self._relay.open()
+            self._relay_port = want
         return self._relay
 
     def device(self) -> PixelDevice:
@@ -146,6 +156,12 @@ class Session:
     def close(self):
         """收尾: 关闭视频/连接并释放设备句柄 (防同进程多次运行句柄泄漏)"""
         try:
+            if self._relay is not None:
+                # switcher_close 会释放 COM 口, 便于外部工具/子进程探测
+                self._relay.close()
+        except Exception:
+            pass
+        try:
             if self._device is not None:
                 if self._video_on:
                     self._device.close_video()
@@ -158,6 +174,8 @@ class Session:
             self._device = None
             self._i2c = None
             self._otp = None
+            self._relay = None
+            self._relay_port = None
             self._device_open = False
             self._video_on = False
             self._configured_ini = None

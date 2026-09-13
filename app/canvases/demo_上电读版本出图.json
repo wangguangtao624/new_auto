@@ -20,19 +20,22 @@
     },
     {
       "id": "n3",
-      "type": "i2c.read",
+      "type": "i2c.rw",
       "x": 60,
       "y": 300,
       "params": {
+        "op": "read",
         "slave": "0x40",
         "addr": "0x00d8",
+        "value": "0x0001",
+        "verify": true,
         "mode": "A2D4"
       }
     },
     {
       "id": "n4",
       "type": "flow.assert_value",
-      "x": 380,
+      "x": 400,
       "y": 300,
       "params": {
         "mask": "0x00FF0000",
@@ -45,14 +48,14 @@
       "id": "n5",
       "type": "device.open_video",
       "x": 60,
-      "y": 430,
+      "y": 440,
       "params": {}
     },
     {
       "id": "n6",
       "type": "device.grab_save",
-      "x": 380,
-      "y": 430,
+      "x": 400,
+      "y": 440,
       "params": {
         "name": "demo"
       }
@@ -60,15 +63,15 @@
     {
       "id": "n7",
       "type": "device.fps",
-      "x": 680,
-      "y": 430,
+      "x": 740,
+      "y": 440,
       "params": {}
     },
     {
       "id": "n8",
       "type": "relay.off",
-      "x": 680,
-      "y": 560,
+      "x": 400,
+      "y": 570,
       "params": {
         "channel": 0
       }
@@ -76,10 +79,60 @@
   ],
   "edges": [
     {
+      "from": "n1",
+      "fromPort": "__out",
+      "to": "n2",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n2",
+      "fromPort": "__out",
+      "to": "n3",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n3",
+      "fromPort": "__out",
+      "to": "n4",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n4",
+      "fromPort": "__out",
+      "to": "n5",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n5",
+      "fromPort": "__out",
+      "to": "n6",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n6",
+      "fromPort": "__out",
+      "to": "n7",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n7",
+      "fromPort": "__out",
+      "to": "n8",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
       "from": "n3",
       "fromPort": "value",
       "to": "n4",
-      "toParam": "value"
+      "toParam": "value",
+      "kind": "data"
     }
   ]
 }

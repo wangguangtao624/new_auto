@@ -1,0 +1,16 @@
+{
+  "name": "case1",
+  "stop_on_fail": true,
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "relay.on",
+      "x": 60,
+      "y": 60,
+      "params": {
+        "channel": 0
+      }
+    }
+  ],
+  "edges": []
+}

@@ -18,6 +18,7 @@ I2C 数据位宽模式 (用户术语): A<m>D<n> = <m> 字节地址 / <n> 字节�
     A1D1=(8,8) A1D2=(8,16) A1D4=(8,32) A2D1=(16,8) A2D2=(16,16)
     A2D4=(16,32) A4D1=(32,8) A4D2=(32,16) A4D4=(32,32)
 """
+import json
 import time
 from pathlib import Path
 
@@ -69,45 +70,117 @@ def _fw_options():
 # ---------------------------------------------------------------- 节点定义
 
 NODES = {}
+DEBUG = {}   # "type:action" -> {type, name, label, run(ctx, params)}
+
 
 def node(type, group, title, desc="", color="#4a89dc", params=None,
-         inputs=None, outputs=None):
+         inputs=None, outputs=None, debug=None):
     def deco(fn):
         NODES[type] = {
             "type": type, "group": group, "title": title, "desc": desc,
             "color": color, "params": params or [], "inputs": inputs or {},
             "outputs": outputs or {}, "run": fn,
+            "debug": debug or [],
         }
+        return fn
+    return deco
+
+
+def debug_action(type, name, label):
+    """节点调试动作: 在属性面板/画布上直接单步执行 (如扫描串口、探测通道)"""
+    def deco(fn):
+        DEBUG[f"{type}:{name}"] = fn
+        for n in NODES.values():
+            if n["type"] == type and not any(d["name"] == name for d in n["debug"]):
+                n["debug"].append({"name": name, "label": label})
         return fn
     return deco
 
 
 # ============================ 电源 (继电器) ============================
 
+_RELAY_PORT_PARAM = {"name": "port", "label": "继电器串口 (空=用 config 默认)",
+                     "type": "port", "default": ""}
+
+
+def _relay_port(params):
+    return (params.get("port") or "").strip() or None
+
+
 @node("relay.on", "电源", "继电器上电", "导通指定通道, 给模组上电", "#e8b339",
-      params=[{"name": "channel", "label": "通道", "type": "int", "default": 0}],
-      outputs={"ok": "是否成功"})
+      params=[_RELAY_PORT_PARAM,
+              {"name": "channel", "label": "通道", "type": "int", "default": 0}],
+      outputs={"ok": "是否成功"},
+      debug=[{"name": "scan_ports", "label": "扫描串口(探测继电器)"},
+             {"name": "probe_channel", "label": "测试通道响应(通→断→通)"}])
 def _relay_on(ctx, params, inputs):
     ctx.ensure_powered(int(params.get("channel", 0)))
     return {"ok": True}
 
 
+@debug_action("relay.on", "scan_ports", "扫描串口")
+def _dbg_scan(ctx, params):
+    return scan_relay_ports()
+
+
+@debug_action("relay.on", "probe_channel", "测试通道响应")
+def _dbg_probe(ctx, params):
+    relay = ctx.relay(_relay_port(params))
+    ch = int(params.get("channel", 0))
+    o1 = relay.open_channel(ch)
+    c = relay.close_channel(ch)
+    o2 = relay.open_channel(ch)
+    ok = o1 and c and o2
+    return {"ok": ok, "report": f"通道{ch} 导通={o1} 断开={c} 再导通={o2} -> "
+            f"{'继电器响应正常' if ok else '存在失败项, 请检查接线/串口'}"}
+
+
 @node("relay.off", "电源", "继电器断电", "断开指定通道, 模组掉电", "#e8b339",
-      params=[{"name": "channel", "label": "通道", "type": "int", "default": 0}],
-      outputs={"ok": "是否成功"})
+      params=[_RELAY_PORT_PARAM,
+              {"name": "channel", "label": "通道", "type": "int", "default": 0}],
+      outputs={"ok": "是否成功"},
+      debug=[{"name": "scan_ports", "label": "扫描串口(探测继电器)"}])
 def _relay_off(ctx, params, inputs):
     ctx.power_off(int(params.get("channel", 0)))
     return {"ok": True}
 
 
 @node("relay.power_cycle", "电源", "掉电重启", "断电保持 -> 重新上电 (规范 15s)", "#e8b339",
-      params=[{"name": "off_seconds", "label": "断电时长(s)", "type": "float", "default": 15}],
-      outputs={"ok": "是否成功"})
+      params=[_RELAY_PORT_PARAM,
+              {"name": "off_seconds", "label": "断电时长(s)", "type": "float", "default": 15}],
+      outputs={"ok": "是否成功"},
+      debug=[{"name": "scan_ports", "label": "扫描串口(探测继电器)"}])
 def _relay_cycle(ctx, params, inputs):
     ctx.power_off()
     time.sleep(float(params.get("off_seconds", 15)))
     ctx.ensure_powered()
     return {"ok": True}
+
+
+def scan_relay_ports():
+    """子进程探测所有串口上的继电器 (进程退出即释放句柄, 不影响主进程)"""
+    import subprocess
+    import sys as _sys
+    probe = ROOT / "app" / "engine" / "port_probe.py"
+    r = subprocess.run([_sys.executable, str(probe)], capture_output=True,
+                       text=True, encoding="utf-8", errors="replace", timeout=120)
+    lines = [ln for ln in (r.stdout or "").splitlines() if ln.startswith("PROBE_JSON:")]
+    if not lines:
+        raise RuntimeError(f"串口探测失败: {r.stderr[:200] if r.stderr else '无输出'}")
+    ports = json.loads(lines[-1][len("PROBE_JSON:"):])
+    relay_ports = [p["port"] for p in ports if p["relay"]]
+    return {"ok": True, "ports": ports,
+            "report": "继电器所在串口: " + (", ".join(relay_ports) if relay_ports else "未发现(检查接线)")}
+
+
+@debug_action("relay.power_cycle", "scan_ports", "扫描串口")
+def _dbg_scan2(ctx, params):
+    return scan_relay_ports()
+
+
+@debug_action("relay.off", "scan_ports", "扫描串口")
+def _dbg_scan3(ctx, params):
+    return scan_relay_ports()
 
 
 # ============================ 设备 ============================
@@ -173,7 +246,50 @@ def _dev_close_video(ctx, params, inputs):
 _I2C_MODE_OPTS = ["A1D1", "A1D2", "A1D4", "A2D1", "A2D2", "A2D4", "A4D1", "A4D2", "A4D4"]
 
 
-@node("i2c.read", "I2C", "读寄存器", "device_I2C_Read, 支持 A2D2/A2D4/A4D4 等位宽", "#3faf6e",
+@node("i2c.rw", "I2C", "I2C 读写模块", "读/写/写并校验 一体的 I2C 模块, 位宽 A1D1~A4D4 任选", "#3faf6e",
+      params=[
+          {"name": "op", "label": "操作", "type": "choice", "default": "read",
+           "options": [{"v": "read", "l": "读寄存器"},
+                       {"v": "write", "l": "写寄存器"},
+                       {"v": "write_verify", "l": "写并校验"}]},
+          {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
+          {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x00d8", "hex": True},
+          {"name": "value", "label": "写入值(写操作时生效)", "type": "str", "default": "0x0001", "hex": True},
+          {"name": "verify", "label": "写后回读校验", "type": "bool", "default": True},
+          {"name": "mode", "label": "位宽模式", "type": "choice", "default": "A2D4", "options": _I2C_MODE_OPTS},
+      ],
+      inputs={"addr": "寄存器地址(可由上游传入)", "value": "写入值(可由上游传入)",
+              "slave": "从机地址(可由上游传入)"},
+      outputs={"ok": "是否成功", "value": "读到的值", "readback": "回读值", "match": "校验一致"})
+def _i2c_rw(ctx, params, inputs):
+    i2c = ctx.i2c()
+    op = params.get("op", "read")
+    slave = _hex(_p("slave")(inputs, params), 0x40)
+    addr = _hex(_p("addr")(inputs, params))
+    addr_len, bits = _mode(params.get("mode", "A2D4"))
+
+    if op == "read":
+        ok, value = i2c.read(addr, slave=slave, addr_len=addr_len, bits=bits)
+        if not ok:
+            raise RuntimeError(f"I2C 读失败 slave=0x{slave:02x} addr=0x{addr:04x} ({addr_len},{bits})")
+        return {"ok": True, "value": value, "readback": None, "match": None}
+
+    # 写 / 写并校验
+    value = _hex(_p("value")(inputs, params))
+    verify = bool(params.get("verify", True)) or op == "write_verify"
+    if not i2c.write(addr, value, slave=slave, addr_len=addr_len, bits=bits):
+        raise RuntimeError(f"I2C 写失败 slave=0x{slave:02x} addr=0x{addr:04x} val=0x{value:x}")
+    if not verify:
+        return {"ok": True, "value": None, "readback": None, "match": None}
+    ok_r, readback = i2c.read(addr, slave=slave, addr_len=addr_len, bits=bits)
+    if not ok_r:
+        raise RuntimeError(f"写后回读失败 addr=0x{addr:04x}")
+    if readback != value:
+        raise RuntimeError(f"写后校验不一致: 写入 0x{value:x}, 回读 0x{readback:x}")
+    return {"ok": True, "value": value, "readback": readback, "match": True}
+
+
+@node("i2c.read", "I2C", "读寄存器(单)", "device_I2C_Read", "#3faf6e",
       params=[
           {"name": "slave", "label": "从机地址", "type": "str", "default": "0x40", "hex": True},
           {"name": "addr", "label": "寄存器地址", "type": "str", "default": "0x00d8", "hex": True},
@@ -449,6 +565,13 @@ def _chk_clk(ctx, params, inputs):
 
 
 # ============================ 流程 ============================
+
+@node("flow.reroute", "流程", "转接点", "理线用: 数据/执行流可在此中转, 保持连线整洁", "#777777",
+      inputs={"in": "输入"},
+      outputs={"out": "输出"})
+def _flow_reroute(ctx, params, inputs):
+    return {"out": inputs.get("in")}
+
 
 @node("flow.delay", "流程", "延时", "等待指定秒数", "#888888",
       params=[{"name": "seconds", "label": "秒", "type": "float", "default": 3}],

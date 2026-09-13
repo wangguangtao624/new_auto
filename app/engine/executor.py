@@ -70,9 +70,11 @@ def run_canvas(canvas: dict, config_path=None, stop_on_fail=None):
 
     order, by_id, adj = topo_sort(nodes, edges)
 
-    # 上游输出 -> (节点, 参数) 的连线索引
+    # 上游输出 -> (节点, 参数) 的连线索引 (执行流连线 "__" 前缀只定序, 不传数据)
     incoming = {}
     for e in edges:
+        if str(e.get("toParam", "")).startswith("__"):
+            continue
         incoming.setdefault(e["to"], {})[e["toParam"]] = (e["from"], e["fromPort"])
 
     ctx = Session(config_path)

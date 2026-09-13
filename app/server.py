@@ -27,10 +27,11 @@ APP_DIR = Path(__file__).resolve().parent
 ROOT = APP_DIR.parent
 sys.path.insert(0, str(ROOT))
 
-from app.engine.registry import get_registry          # noqa: E402
-from app.engine.executor import run_canvas, CanvasError  # noqa: E402
-from app.engine import codegen                        # noqa: E402
-from modules.log_setup import setup_logging           # noqa: E402
+from app.engine.registry import get_registry, get_node, DEBUG, NODES   # noqa: E402
+from app.engine.executor import run_canvas, CanvasError         # noqa: E402
+from app.engine.session import Session                          # noqa: E402
+from app.engine import codegen                                  # noqa: E402
+from modules.log_setup import setup_logging                     # noqa: E402
 
 CANVAS_DIR = APP_DIR / "canvases"
 CASES_DIR = APP_DIR / "cases"
@@ -43,7 +44,7 @@ _RUN_LOCK = threading.Lock()
 
 
 def _demo_canvas():
-    """首次启动自动生成一个可运行的示例画布"""
+    """首次启动自动生成一个可运行的示例画布 (含执行流连线)"""
     return {
         "name": "demo_上电读版本出图",
         "stop_on_fail": True,
@@ -51,19 +52,29 @@ def _demo_canvas():
             {"id": "n1", "type": "relay.on", "x": 60, "y": 40,
              "params": {"channel": 0}},
             {"id": "n2", "type": "device.configure", "x": 60, "y": 170, "params": {}},
-            {"id": "n3", "type": "i2c.read", "x": 60, "y": 300,
-             "params": {"slave": "0x40", "addr": "0x00d8", "mode": "A2D4"}},
-            {"id": "n4", "type": "flow.assert_value", "x": 380, "y": 300,
+            {"id": "n3", "type": "i2c.rw", "x": 60, "y": 300,
+             "params": {"op": "read", "slave": "0x40", "addr": "0x00d8",
+                         "value": "0x0001", "verify": True, "mode": "A2D4"}},
+            {"id": "n4", "type": "flow.assert_value", "x": 400, "y": 300,
              "params": {"mask": "0x00FF0000", "shift": 16, "op": ">=", "expected": "0x4"}},
-            {"id": "n5", "type": "device.open_video", "x": 60, "y": 430, "params": {}},
-            {"id": "n6", "type": "device.grab_save", "x": 380, "y": 430,
+            {"id": "n5", "type": "device.open_video", "x": 60, "y": 440, "params": {}},
+            {"id": "n6", "type": "device.grab_save", "x": 400, "y": 440,
              "params": {"name": "demo"}},
-            {"id": "n7", "type": "device.fps", "x": 680, "y": 430, "params": {}},
-            {"id": "n8", "type": "relay.off", "x": 680, "y": 560,
+            {"id": "n7", "type": "device.fps", "x": 740, "y": 440, "params": {}},
+            {"id": "n8", "type": "relay.off", "x": 400, "y": 570,
              "params": {"channel": 0}},
         ],
         "edges": [
-            {"from": "n3", "fromPort": "value", "to": "n4", "toParam": "value"},
+            # 执行流 (决定执行顺序, 粗线箭头)
+            {"from": "n1", "fromPort": "__out", "to": "n2", "toParam": "__in", "kind": "flow"},
+            {"from": "n2", "fromPort": "__out", "to": "n3", "toParam": "__in", "kind": "flow"},
+            {"from": "n3", "fromPort": "__out", "to": "n4", "toParam": "__in", "kind": "flow"},
+            {"from": "n4", "fromPort": "__out", "to": "n5", "toParam": "__in", "kind": "flow"},
+            {"from": "n5", "fromPort": "__out", "to": "n6", "toParam": "__in", "kind": "flow"},
+            {"from": "n6", "fromPort": "__out", "to": "n7", "toParam": "__in", "kind": "flow"},
+            {"from": "n7", "fromPort": "__out", "to": "n8", "toParam": "__in", "kind": "flow"},
+            # 数据流 (传值, 细线)
+            {"from": "n3", "fromPort": "value", "to": "n4", "toParam": "value", "kind": "data"},
         ],
     }
 
@@ -101,6 +112,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._static(WEB_DIR / path[len("/web/"):])
         if path == "/api/nodes":
             return self._json({"nodes": get_registry()})
+        if path == "/api/ports":
+            import serial.tools.list_ports
+            ports = [{"port": p.device, "desc": p.description}
+                     for p in serial.tools.list_ports.comports()]
+            return self._json({"ports": ports})
         if path == "/api/config":
             return self._json(json.loads((ROOT / "config.json").read_text(encoding="utf-8")))
         if path == "/api/canvases":
@@ -140,6 +156,46 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = unquote(urlparse(self.path).path)
+        if path == "/api/run_node":
+            """单节点调试: 新建独立会话, 只执行这一个节点"""
+            body = self._read_json()
+            ntype = body.get("type")
+            if ntype not in NODES:
+                return self._json({"error": f"未知节点类型 {ntype}"}, 400)
+            if not _RUN_LOCK.acquire(blocking=False):
+                return self._json({"error": "已有一次运行在进行中, 请稍候"}, 409)
+            try:
+                ctx = Session()
+                try:
+                    outs = get_node(ntype)["run"](ctx, body.get("params", {}), {}) or {}
+                    return self._json({"ok": True, "outputs": outs})
+                finally:
+                    ctx.close()
+            except Exception as e:
+                logger.exception("单节点调试失败")
+                return self._json({"ok": False, "error": str(e)})
+            finally:
+                _RUN_LOCK.release()
+        if path == "/api/debug":
+            """节点调试动作 (如扫描串口/测试通道), 独立会话执行"""
+            body = self._read_json()
+            key = f"{body.get('type')}:{body.get('action')}"
+            if key not in DEBUG:
+                return self._json({"error": f"未知调试动作 {key}"}, 400)
+            if not _RUN_LOCK.acquire(blocking=False):
+                return self._json({"error": "已有一次运行在进行中, 请稍候"}, 409)
+            try:
+                ctx = Session()
+                try:
+                    result = DEBUG[key](ctx, body.get("params", {})) or {}
+                    return self._json(result)
+                finally:
+                    ctx.close()
+            except Exception as e:
+                logger.exception("调试动作失败")
+                return self._json({"ok": False, "error": str(e)})
+            finally:
+                _RUN_LOCK.release()
         if path.startswith("/api/run/"):
             name = path[len("/api/run/"):]
             f = CANVAS_DIR / f"{name}.json"

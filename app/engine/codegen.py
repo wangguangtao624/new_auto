@@ -90,6 +90,8 @@ def generate(canvas: dict) -> Path:
             return repr(params.get(key))
 
         if ntype == "relay.on":
+            if params.get("port"):
+                lines.append(f"    ctx.relay({params['port']!r})  # 指定继电器串口")
             lines.append(f"    ctx.ensure_powered({pv('channel', 0)})")
         elif ntype == "relay.off":
             lines.append(f"    ctx.power_off({pv('channel', 0)})")
@@ -116,6 +118,37 @@ def generate(canvas: dict) -> Path:
         elif ntype == "device.dn":
             lines.append(f"    {var}_dn = ctx.ensure_video().get_dn()")
             lines.append(f"    print('[{ntype}] dn =', {var}_dn)")
+        elif ntype == "i2c.rw":
+            mode = params.get("mode", "A2D4")
+            op = params.get("op", "read")
+            verify = bool(params.get("verify", True))
+            lines.append(f"    _m = _I_MODE['{mode}']")
+            if op == "read":
+                lines.append(f"    {var}_ok, {var}_value = ctx.i2c().read("
+                             f"{pv('addr', '0x00d8')}, slave={pv('slave', '0x40')}, "
+                             f"addr_len=_m[0], bits=_m[1])")
+                lines.append(f"    assert {var}_ok, 'I2C 读失败'")
+                lines.append(f"    print('[i2c.rw] value =', hex({var}_value))")
+            else:
+                do_verify = verify or op == "write_verify"
+                lines.append(f"    {var}_ok = ctx.i2c().write("
+                             f"{pv('addr', '0x0918')}, {pv('value', '0x0001')}, "
+                             f"slave={pv('slave', '0x40')}, addr_len=_m[0], bits=_m[1])")
+                lines.append(f"    assert {var}_ok, 'I2C 写失败'")
+                if do_verify:
+                    lines.append(f"    {var}_rb = ctx.i2c().read("
+                                 f"{pv('addr', '0x0918')}, slave={pv('slave', '0x40')}, "
+                                 f"addr_len=_m[0], bits=_m[1])[1]")
+                    lines.append(f"    assert {var}_rb == {pv('value', '0x0001')}, "
+                                 f"f'写后校验不一致: {{ {var}_rb:#x }}'")
+                    lines.append(f"    print('[i2c.rw] 写并校验通过')")
+        elif ntype == "flow.reroute":
+            if "in" in ins:
+                _src, _port = ins["in"]
+                _expr = f"{var_of[_src]}_{_safe(_port)}"
+            else:
+                _expr = "None"
+            lines.append(f"    {var}_out = {_expr}")
         elif ntype == "i2c.read":
             mode = params.get("mode", "A2D4")
             lines.append(f"    _m = _I_MODE['{mode}']")

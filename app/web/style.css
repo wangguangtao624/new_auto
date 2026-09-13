@@ -58,19 +58,24 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 
 /* ---------- 节点 ---------- */
 .node {
-  position: absolute; min-width: 168px; background: var(--panel);
+  position: absolute; min-width: 172px; background: var(--panel);
   border: 1.5px solid var(--line); border-radius: 9px; user-select: none;
   box-shadow: 0 3px 10px rgba(0,0,0,.35);
 }
 .node.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(74,137,220,.35); }
 .node-head {
-  padding: 7px 10px; border-radius: 7px 7px 0 0; cursor: grab;
-  display: flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border-radius: 7px 7px 0 0; cursor: grab;
+  display: flex; align-items: center; gap: 6px; min-height: 30px;
 }
 .node-head .t { font-weight: 700; color: #fff; font-size: 12.5px; }
 .node-head .g { margin-left: auto; font-size: 10px; color: rgba(255,255,255,.75); }
+.node-run {
+  background: rgba(0,0,0,.25); color: #fff; border: none; border-radius: 4px;
+  width: 18px; height: 18px; font-size: 9px; line-height: 1; cursor: pointer; padding: 0;
+}
+.node-run:hover { background: rgba(255,255,255,.3); }
 .node-type { padding: 2px 10px; color: var(--dim); font-size: 10.5px; }
-.node-status { padding: 0 10px 6px; font-size: 11.5px; display: none; }
+.node-status { padding: 0 10px 6px; font-size: 11.5px; display: none; word-break: break-all; }
 .node.st-pass { border-color: var(--ok); }
 .node.st-fail { border-color: var(--err); }
 .node.st-skip { opacity: .45; }
@@ -78,8 +83,14 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
 .node-status.st-fail { color: var(--err); display: block; }
 .node-status.st-skip { color: var(--dim); display: block; }
 
+/* 执行流端口 (金色方块, 顶部两角) 与数据端口 (蓝色圆点, 两侧) */
+.flow-in, .flow-out {
+  position: absolute; width: 12px; height: 12px; background: var(--panel);
+  border: 2px solid #e8b339; transform: rotate(45deg); cursor: crosshair; z-index: 3;
+}
+.flow-in:hover, .flow-out:hover { background: #e8b339; }
 .port { position: absolute; width: 11px; height: 11px; border-radius: 50%;
-  background: var(--panel2); border: 2px solid var(--accent); cursor: crosshair; z-index: 2; }
+  background: var(--panel2); border: 2px solid var(--accent); cursor: crosshair; z-index: 3; }
 .port.out { right: -7px; }
 .port.in { left: -7px; }
 .port:hover { background: var(--accent); }
@@ -87,8 +98,11 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   position: absolute; white-space: nowrap; font-size: 9.5px;
   color: var(--dim); top: -2px; pointer-events: none;
 }
-.port.out .pl { left: 14px; }
-.port.in .pl { right: 14px; }
+.port.out .pl, .flow-out .pl { left: 14px; }
+.port.in .pl, .flow-in .pl { right: 14px; }
+
+#wires path.edge { pointer-events: stroke; cursor: pointer; }
+#wires path.edge:hover { stroke-width: 4 !important; }
 
 /* ---------- 属性面板 ---------- */
 #inspector {
@@ -131,3 +145,35 @@ button.danger:hover { border-color: var(--err); color: var(--err); }
   background: var(--accent); color: #fff; border-radius: 7px; font-size: 12px;
   opacity: .85;
 }
+
+/* ---------- 画布平移 ---------- */
+#canvas-wrap.panning { cursor: grabbing; }
+#canvas-wrap { cursor: default; }
+
+/* ---------- 右键新建节点菜单 ---------- */
+#ctx-menu {
+  position: fixed; z-index: 200; width: 200px; max-height: 70vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+  box-shadow: 0 10px 34px rgba(0,0,0,.55); padding: 6px;
+}
+.ctx-title { font-weight: 700; color: var(--dim); padding: 4px 8px 6px; }
+.ctx-group { color: var(--dim); font-size: 10.5px; padding: 6px 8px 2px;
+  border-top: 1px dashed var(--line); }
+.ctx-item { padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12.5px; }
+.ctx-item:hover { background: var(--accent); color: #fff; }
+
+/* ---------- 调试区 ---------- */
+.ins-debug { margin-top: 4px; }
+.dbg-btn, .dbg-run {
+  display: block; width: 100%; margin-bottom: 6px; text-align: left;
+}
+.dbg-run { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
+.dbg-result {
+  margin-top: 6px; padding: 7px 9px; border-radius: 6px; font-size: 11.5px;
+  background: var(--panel2); color: var(--dim); white-space: pre-wrap;
+  word-break: break-all; display: none;
+}
+.dbg-result.ok, .dbg-result.err { display: block; }
+.dbg-result.ok { color: var(--fg); }
+.dbg-result.err { color: var(--err); }
+a.refresh-ports { color: var(--accent); font-size: 11px; }
