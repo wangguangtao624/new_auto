@@ -19,7 +19,7 @@ from common import ROOT, load_config
 
 from modules.device import PixelDevice
 from modules.log_setup import setup_logging
-from modules.relay import RelayController
+from modules.relay import relay_from_config
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
     relay_cfg, dev_cfg = config["relay"], config["device"]
 
     # 1. 上电
-    relay = RelayController(relay_cfg["port"])
+    relay = relay_from_config(config)
     relay.open()
     if not relay.open_channel(relay_cfg["channel"]):
         print("FAIL: 继电器通道导通失败")

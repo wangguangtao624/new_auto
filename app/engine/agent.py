@@ -38,6 +38,20 @@ def load_api_key() -> str:
     return ""
 
 
+def agent_status() -> dict:
+    """返回 AI 可用性元数据，绝不返回 API Key 本身。"""
+    cfg = agent_cfg()
+    env_key = bool(os.environ.get("SENSENOVA_API_KEY", "").strip())
+    key_file = ROOT / cfg.get("api_key_file", "app/agent_key.local")
+    file_key = key_file.exists() and bool(key_file.read_text(encoding="utf-8").strip())
+    return {
+        "configured": env_key or file_key,
+        "key_source": "environment" if env_key else ("local_file" if file_key else None),
+        "key_file": str(key_file.relative_to(ROOT)),
+        "base_url": cfg.get("base_url", ""),
+    }
+
+
 def chat_completion(messages: list, model: str = None, temperature: float = 0.3,
                     timeout: int = 180) -> str:
     """调用 OpenAI 兼容 chat/completions, 返回助手文本 (429 限流自动重试)"""

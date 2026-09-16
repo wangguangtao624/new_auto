@@ -22,7 +22,7 @@ def init_module(config):
     """
     from modules.device import PixelDevice
     from modules.i2c import I2CController
-    from modules.relay import RelayController
+    from modules.relay import relay_from_config
 
     relay_cfg = config["relay"]
     dev_cfg = config["device"]
@@ -31,7 +31,7 @@ def init_module(config):
     relay = None
     for attempt in range(3):
         try:
-            relay = RelayController(relay_cfg["port"])
+            relay = relay_from_config(config)
             break
         except RuntimeError as e:
             if attempt == 2:

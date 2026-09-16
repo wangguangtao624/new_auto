@@ -2,7 +2,10 @@
   "relay": {
     "port": "COM3",
     "channel": 0,
-    "power_cycle_off_seconds": 15
+    "power_cycle_off_seconds": 15,
+    "transport": "sdk",
+    "baudrate": 9600,
+    "timeout_seconds": 0.8
   },
   "device": {
     "chip": "MAT130YV200",

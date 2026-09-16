@@ -76,8 +76,8 @@ def main():
 
     # ---- 真实下载 ----
     print(f"\n[5] 烧录前上电 + 真实固件下载 (MatFwDownload)...")
-    from modules.relay import RelayController as _RC
-    _relay = _RC(config["relay"]["port"])
+    from modules.relay import relay_from_config as _relay_from_config
+    _relay = _relay_from_config(config)
     _relay.open()
     _relay.close_channel(config["relay"]["channel"])
     time.sleep(15)  # 规范掉电
@@ -94,8 +94,8 @@ def main():
     # ---- 烧录后通过 I2C 读版本确认 (规范掉电重启) ----
     print("[6] 规范掉电重启后通过 I2C 回读固件版本...")
     from modules.i2c import I2CController
-    from modules.relay import RelayController
-    relay = RelayController(config["relay"]["port"])
+    from modules.relay import relay_from_config
+    relay = relay_from_config(config)
     relay.open()
     relay.close_channel(config["relay"]["channel"])
     time.sleep(15)  # 完全掉电

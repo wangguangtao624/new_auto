@@ -57,8 +57,15 @@ class Session:
                     self._relay.close()
                 except Exception:
                     pass
-            self._relay = RelayController(want)
-            self._relay.open()
+            relay_cfg = self.cfg["relay"]
+            self._relay = RelayController(
+                want,
+                transport=relay_cfg.get("transport", "sdk"),
+                baudrate=relay_cfg.get("baudrate", 9600),
+                timeout=relay_cfg.get("timeout_seconds", 0.8),
+            )
+            if not self._relay.open():
+                raise RuntimeError(f"继电器 {want} 连接失败")
             self._relay_port = want
         return self._relay
 

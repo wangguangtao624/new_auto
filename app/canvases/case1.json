@@ -3,14 +3,155 @@
   "stop_on_fail": true,
   "nodes": [
     {
-      "id": "n1",
-      "type": "relay.on",
-      "x": 60,
-      "y": 60,
+      "id": "ntqlfe",
+      "type": "relay.ctrl",
+      "x": -152.20000000000002,
+      "y": -297.20000000000005,
       "params": {
-        "channel": 0
+        "port": "COM3",
+        "action": "on",
+        "channel": 0,
+        "off_seconds": 2
+      }
+    },
+    {
+      "id": "nzc7r6",
+      "type": "flow.delay",
+      "x": -149.40000000000003,
+      "y": -161,
+      "params": {
+        "seconds": 3
+      }
+    },
+    {
+      "id": "n70o3n",
+      "type": "device.configure",
+      "x": -149.4,
+      "y": -23.400000000000006,
+      "params": {}
+    },
+    {
+      "id": "n9fxli",
+      "type": "device.stream",
+      "x": -149.2,
+      "y": 104.8,
+      "params": {
+        "open_video": true,
+        "capture": true,
+        "read_fps": true,
+        "read_dn": true,
+        "name": "case_frame"
+      }
+    },
+    {
+      "id": "njims4",
+      "type": "checks.start_status",
+      "x": -140.8,
+      "y": 276,
+      "params": {}
+    },
+    {
+      "id": "n670i8",
+      "type": "checks.fw_version",
+      "x": 127.4,
+      "y": 282.4,
+      "params": {}
+    },
+    {
+      "id": "n02lsh",
+      "type": "i2c.batch",
+      "x": 359.8,
+      "y": 116,
+      "params": {
+        "slave": "0x40",
+        "ops": "read 0x00cc A2D4\nread 0x00cc A2D4\nread 0x00cc A2D4\nread 0x00cc A2D4\nread 0x00cc A2D4\nwrite 0x0938 0x0001 A2D2\n",
+        "mode": "A2D2"
+      }
+    },
+    {
+      "id": "nsudyz",
+      "type": "flow.delay",
+      "x": 356.2,
+      "y": -19.39999999999999,
+      "params": {
+        "seconds": 3
+      }
+    },
+    {
+      "id": "nqz26r",
+      "type": "device.stream",
+      "x": 353.176,
+      "y": -191.11200000000002,
+      "params": {
+        "open_video": true,
+        "capture": true,
+        "read_fps": true,
+        "read_dn": true,
+        "name": "case_frame"
       }
     }
   ],
-  "edges": []
+  "edges": [
+    {
+      "from": "ntqlfe",
+      "fromPort": "__out",
+      "to": "nzc7r6",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "nzc7r6",
+      "fromPort": "__out",
+      "to": "n70o3n",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n70o3n",
+      "fromPort": "__out",
+      "to": "n9fxli",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n9fxli",
+      "fromPort": "__out",
+      "to": "njims4",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "njims4",
+      "fromPort": "__out",
+      "to": "n670i8",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n670i8",
+      "fromPort": "__out",
+      "to": "n02lsh",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n02lsh",
+      "fromPort": "__out",
+      "to": "nsudyz",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "nsudyz",
+      "fromPort": "__out",
+      "to": "nqz26r",
+      "toParam": "__in",
+      "kind": "flow"
+    }
+  ],
+  "view": {
+    "x": 750,
+    "y": 462,
+    "z": 1.116
+  }
 }

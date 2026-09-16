@@ -13,7 +13,7 @@ import time
 from common import ROOT, load_config
 
 from modules.log_setup import setup_logging
-from modules.relay import RelayController, list_com_ports
+from modules.relay import list_com_ports, relay_from_config
 
 
 def main():
@@ -25,7 +25,7 @@ def main():
     print(f"本机串口: {list_com_ports()}")
     print(f"目标继电器: {relay_cfg['port']} 通道 {ch}")
 
-    relay = RelayController(relay_cfg["port"])
+    relay = relay_from_config(config)
     results = {}
 
     results["open"] = relay.open()

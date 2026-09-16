@@ -8,7 +8,9 @@
 </head>
 <body>
 <div id="topbar">
-  <span id="logo">⬡ new_auto</span>
+  <span id="logo">⬡ new_auto <small>FLOW LAB</small></span>
+  <span id="shortcut-hint" title="Ctrl+S 保存；Ctrl+Enter 运行；? 打开帮助">Ctrl+S 保存 · Ctrl+Enter 运行</span>
+  <button id="btn-ai-quick" class="ai-quick" title="打开 AI 用例生成器">AI 生成用例 <span id="ai-top-status" class="signal" aria-label="AI 配置状态"></span></button>
   <select id="canvas-list" title="选择画布"></select>
   <button id="btn-new">新建</button>
   <button id="btn-rename">重命名</button>
@@ -16,8 +18,8 @@
   <span class="sep"></span>
   <label class="chk"><input type="checkbox" id="chk-stopfail" checked> 失败即停</label>
   <span class="sep"></span>
-  <button id="btn-save">💾 保存画布</button>
-  <button id="btn-run" class="primary">▶ 运行</button>
+  <button id="btn-save" title="Ctrl+S">💾 保存画布</button>
+  <button id="btn-run" class="primary" title="Ctrl+Enter">▶ 运行</button>
   <button id="btn-gencode">⇩ 生成代码</button>
   <button id="btn-gallery" title="抓帧图片预览">🖼 图片</button>
   <button id="btn-help" title="连线与操作说明">❓ 帮助</button>
@@ -26,7 +28,8 @@
 
 <div id="main">
   <div id="palette">
-    <div class="pal-title">模块面板（拖入画布 / 双击添加）</div>
+    <div class="pal-title"><span>模块库</span><small>拖入画布或双击添加</small></div>
+    <label class="palette-search"><span>⌕</span><input id="palette-filter" type="search" placeholder="搜索节点、能力或寄存器"></label>
     <div id="palette-groups"></div>
   </div>
 
@@ -61,13 +64,14 @@
       <div id="ins-body" class="ins-empty">点击节点编辑参数</div>
     </div>
     <div id="tab-ai" class="hidden">
+      <div class="ai-intro"><b>用自然语言生成测试流程</b><span id="ai-config-status">正在检查 AI 配置…</span></div>
       <div class="field" style="margin-bottom:8px">
         <label>模型</label>
         <select id="ai-model"></select>
       </div>
       <div id="ai-history"><div class="ai-msg ai-sys">描述你想要的测试用例, 我来生成画布。<br>例如: "先上电, 读0x00d8断言主版本是4, 出图抓帧读FPS, 最后断电"</div></div>
-      <textarea id="ai-input" rows="3" placeholder="描述想实现的用例… (Ctrl+Enter 发送)"></textarea>
-      <button id="ai-send" class="primary" style="width:100%">发送给 AI 生成画布</button>
+      <textarea id="ai-input" rows="4" placeholder="例如：上电后读取 0x00d8，断言主版本为 4，抓帧并检查 FPS，最后断电。 Ctrl+Enter 发送"></textarea>
+      <div class="ai-actions"><button id="ai-example" type="button">填入示例</button><button id="ai-send" class="primary">生成画布</button></div>
     </div>
   </div>
 </div>

@@ -85,15 +85,20 @@ function fitView() {
 /* ---------------- 面板 ---------------- */
 function visibleRegistry() { return REG.filter((n) => !n.hidden); }
 
-function renderPalette() {
+function renderPalette(query = "") {
+  const needle = query.trim().toLocaleLowerCase();
   const groups = {};
-  visibleRegistry().forEach((n) => (groups[n.group] ||= []).push(n));
+  visibleRegistry().filter((n) => !needle || [n.title, n.desc, n.type, n.group]
+    .join(" ").toLocaleLowerCase().includes(needle))
+    .forEach((n) => (groups[n.group] ||= []).push(n));
   const root = $("#palette-groups");
   root.innerHTML = "";
   const order = [...GROUP_ORDER, ...Object.keys(groups).filter((g) => !GROUP_ORDER.includes(g))];
+  let count = 0;
   for (const g of order) {
     const items = groups[g];
     if (!items) continue;
+    count += items.length;
     const div = document.createElement("div");
     div.className = "pal-group";
     div.innerHTML = `<div class="pal-group-name">${esc(g)}</div>`;
@@ -405,9 +410,11 @@ function showMenu(screenX, screenY, worldX, worldY) {
   const groups = {};
   visibleRegistry().forEach((n) => (groups[n.group] ||= []).push(n));
   const order = [...GROUP_ORDER, ...Object.keys(groups).filter((g) => !GROUP_ORDER.includes(g))];
+  let count = 0;
   for (const g of order) {
     const items = groups[g];
     if (!items) continue;
+    count += items.length;
     html += `<div class="ctx-group">${esc(g)}</div>`;
     for (const it of items)
       html += `<div class="ctx-item" data-type="${esc(it.type)}">${esc(it.title)}</div>`;
@@ -768,15 +775,14 @@ async function pollRun(runId) {
 }
 
 /* ---------------- 右侧面板 Tabs ---------------- */
+function showInspectorTab(name) {
+  $$("#ins-tabs .tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  $("#tab-props").classList.toggle("hidden", name !== "props");
+  $("#tab-ai").classList.toggle("hidden", name !== "ai");
+  if (name === "ai") initAiPanel();
+}
 function initTabs() {
-  $$("#ins-tabs .tab").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      $$("#ins-tabs .tab").forEach((b) => b.classList.toggle("active", b === btn));
-      $("#tab-props").classList.toggle("hidden", btn.dataset.tab !== "props");
-      $("#tab-ai").classList.toggle("hidden", btn.dataset.tab !== "ai");
-      if (btn.dataset.tab === "ai") initAiPanel();
-    });
-  });
+  $$("#ins-tabs .tab").forEach((btn) => btn.addEventListener("click", () => showInspectorTab(btn.dataset.tab)));
 }
 
 /* ---------------- AI 助手 ---------------- */
@@ -787,11 +793,22 @@ async function initAiPanel() {
   if (aiReady) return;
   aiReady = true;
   try {
-    const m = await jfetch("/api/agent/models");
+    const [m, status] = await Promise.all([jfetch("/api/agent/models"), jfetch("/api/agent/status")]);
     $("#ai-model").innerHTML = (m.models || []).map(
       (x) => `<option ${x === m.model ? "selected" : ""}>${esc(x)}</option>`).join("");
-  } catch { /* 模型列表拉取失败不阻塞 */ }
+    const msg = status.configured ? `已就绪 · Key 来源：${status.key_source === "environment" ? "环境变量" : "本地配置文件"}` : `未配置 Key · 写入 ${status.key_file} 或设置 SENSENOVA_API_KEY`;
+    $("#ai-config-status").textContent = msg;
+    $("#ai-config-status").classList.toggle("ready", status.configured);
+    $("#ai-top-status").className = "signal " + (status.configured ? "ready" : "warn");
+    $("#ai-top-status").title = msg;
+  } catch {
+    $("#ai-config-status").textContent = "无法读取 AI 配置状态";
+  }
   $("#ai-send").addEventListener("click", aiSend);
+  $("#ai-example").addEventListener("click", () => {
+    $("#ai-input").value = "先上电，读取 0x00d8 并断言主版本为 4，出图抓帧并检查 FPS，最后断电。";
+    $("#ai-input").focus();
+  });
   $("#ai-input").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) aiSend();
   });
@@ -898,6 +915,7 @@ async function init() {
   REG = (await jfetch("/api/nodes")).nodes;
   await loadPorts();
   renderPalette();
+  $("#palette-filter").addEventListener("input", (e) => renderPalette(e.target.value));
 
   initCanvasEvents();
   initClipboard();
@@ -905,6 +923,7 @@ async function init() {
   initGallery();
 
   $("#canvas-list").addEventListener("change", () => loadCanvas($("#canvas-list").value));
+  $("#btn-ai-quick").addEventListener("click", () => showInspectorTab("ai"));
   $("#btn-new").addEventListener("click", async () => {
     const name = prompt("新画布名称 (即 case 名):");
     if (!name) return;
@@ -943,6 +962,18 @@ async function init() {
   $("#dock-toggle").addEventListener("click", () => $("#rundock").classList.toggle("collapsed"));
   $("#dock-head").addEventListener("dblclick", () => $("#rundock").classList.toggle("collapsed"));
   $("#dock-clear").addEventListener("click", dockClear);
+  document.addEventListener("keydown", async (e) => {
+    const editing = /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName || "");
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault(); await saveCanvas();
+    } else if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !editing) {
+      e.preventDefault(); runCanvas();
+    } else if (e.key === "?" && !editing) {
+      e.preventDefault(); $("#help-overlay").classList.remove("hidden");
+    } else if (e.key === "Escape") {
+      $$("#gallery-overlay, #gallery-viewer, #help-overlay").forEach((el) => el.classList.add("hidden"));
+    }
+  });
 
   await refreshCanvasList();
   const names = $$("#canvas-list option").map((o) => o.textContent);

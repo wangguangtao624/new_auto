@@ -1,0 +1,28 @@
+{
+  "name": "case333",
+  "stop_on_fail": true,
+  "nodes": [
+    {"id": "power_on", "type": "relay.ctrl", "x": 70, "y": 60,
+     "params": {"action": "on", "channel": 0, "off_seconds": 15}},
+    {"id": "wait_boot", "type": "flow.delay", "x": 70, "y": 205,
+     "params": {"seconds": 5}},
+    {"id": "stream", "type": "device.stream", "x": 70, "y": 350,
+     "params": {"open_video": true, "capture": true, "read_fps": true, "read_dn": true, "name": "case333"}},
+    {"id": "assert_fps", "type": "flow.assert_value", "x": 390, "y": 350,
+     "params": {"mask": "0xFFFFFFFF", "shift": 0, "op": ">=", "expected": "0x19"}},
+    {"id": "read_version", "type": "i2c.rw", "x": 390, "y": 505,
+     "params": {"op": "read", "slave": "0x40", "addr": "0x00d8", "value": "0x0001", "verify": true, "mode": "A2D4"}},
+    {"id": "assert_version", "type": "flow.assert_value", "x": 710, "y": 505,
+     "params": {"mask": "0x00FF0000", "shift": 16, "op": "==", "expected": "0x04"}}
+  ],
+  "edges": [
+    {"from": "power_on", "fromPort": "__out", "to": "wait_boot", "toParam": "__in", "kind": "flow"},
+    {"from": "wait_boot", "fromPort": "__out", "to": "stream", "toParam": "__in", "kind": "flow"},
+    {"from": "stream", "fromPort": "__out", "to": "assert_fps", "toParam": "__in", "kind": "flow"},
+    {"from": "stream", "fromPort": "fps", "to": "assert_fps", "toParam": "value", "kind": "data"},
+    {"from": "assert_fps", "fromPort": "__out", "to": "read_version", "toParam": "__in", "kind": "flow"},
+    {"from": "read_version", "fromPort": "__out", "to": "assert_version", "toParam": "__in", "kind": "flow"},
+    {"from": "read_version", "fromPort": "value", "to": "assert_version", "toParam": "value", "kind": "data"}
+  ],
+  "view": {"x": 100, "y": 100, "z": 1}
+}

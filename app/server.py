@@ -197,6 +197,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/agent/models":
             return self._json({"models": agent.agent_cfg().get("models", []),
                                "model": agent.agent_cfg().get("model")})
+        if path == "/api/agent/status":
+            return self._json(agent.agent_status())
+        if path == "/api/health":
+            config = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+            relay_cfg = config.get("relay", {})
+            init_file = ROOT / "configs" / "init_file" / config.get("device", {}).get("init_file", "")
+            fw_file = ROOT / config.get("firmware", {}).get("fw_dir", "fw") / config.get("firmware", {}).get("fw_file", "")
+            import serial.tools.list_ports
+            ports = [p.device for p in serial.tools.list_ports.comports()]
+            return self._json({"ok": True, "relay": {"port": relay_cfg.get("port"),
+                               "present": relay_cfg.get("port") in ports, "transport": relay_cfg.get("transport", "sdk")},
+                               "assets": {"ini_present": init_file.is_file(), "firmware_present": fw_file.is_file()},
+                               "ai": agent.agent_status()})
         if path == "/api/canvases":
             CANVAS_DIR.mkdir(exist_ok=True)
             names = sorted(p.stem for p in CANVAS_DIR.glob("*.json"))
