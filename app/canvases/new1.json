@@ -1,0 +1,128 @@
+{
+  "name": "new1",
+  "stop_on_fail": true,
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "power.ctrl",
+      "x": 0,
+      "y": 0,
+      "params": {
+        "action": "on",
+        "channel": 0,
+        "port": "COM9",
+        "off_seconds": 15,
+        "wait_after_on": 8
+      }
+    },
+    {
+      "id": "nalqin",
+      "type": "device.open",
+      "x": -0.4086129411788342,
+      "y": 121.04065846803162,
+      "params": {
+        "ini": "",
+        "auto_power": true
+      }
+    },
+    {
+      "id": "n7c5cj",
+      "type": "i2c.seq",
+      "x": -0.8674698795180777,
+      "y": 269.39759036144585,
+      "params": {
+        "slave": "0x40",
+        "mode": "A2D4",
+        "ops": [
+          {
+            "op": "read",
+            "addr": "0x00cc",
+            "value": "",
+            "expect": "",
+            "mask": "0xFFFFFFFF",
+            "shift": "0",
+            "slave": "",
+            "mode": "A2D4"
+          },
+          {
+            "op": "read",
+            "addr": "0x00cc",
+            "value": "",
+            "expect": "",
+            "mask": "0xFFFFFFFF",
+            "shift": "0",
+            "slave": "",
+            "mode": "A2D4"
+          },
+          {
+            "op": "read",
+            "addr": "0x00cc",
+            "mode": "A2D4",
+            "value": "",
+            "expect": "",
+            "mask": "0xFFFFFFFF",
+            "shift": "0",
+            "slave": ""
+          },
+          {
+            "op": "read",
+            "addr": "0x00cc",
+            "value": "",
+            "expect": "",
+            "mask": "0xFFFFFFFF",
+            "shift": "0",
+            "slave": "",
+            "mode": "A2D4"
+          },
+          {
+            "op": "read",
+            "addr": "0x0000",
+            "value": "",
+            "expect": "",
+            "mask": "0xFFFFFFFF",
+            "shift": "0",
+            "slave": "",
+            "mode": "A2D4"
+          },
+          {
+            "op": "read",
+            "addr": "0x00d8",
+            "mode": "A2D4",
+            "mask": "0xFFFFFFFF",
+            "shift": 0,
+            "expect": ""
+          },
+          {
+            "op": "read",
+            "addr": "0x093c",
+            "mode": "A2D2",
+            "mask": "0x0000FFFF",
+            "shift": 0,
+            "expect": "0x0000"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "n1",
+      "fromPort": "__out",
+      "to": "nalqin",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "nalqin",
+      "fromPort": "__out",
+      "to": "n7c5cj",
+      "toParam": "__in",
+      "kind": "flow"
+    }
+  ],
+  "view": {
+    "x": 290,
+    "y": 252,
+    "z": 0.963
+  }
+}

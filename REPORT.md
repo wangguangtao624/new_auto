@@ -2,7 +2,7 @@
 
 > 日期: 2026-09-13 ｜ 源工程: `F:\01_test\fw_auto_copy` ｜ 交付目录: `F:\01_test\new_auto`
 >
-> 现场硬件: 继电器 COM3/CH0 ＋ MAT130 YV200 模组（板载 96701 串行器）＋ MAX96712
+> 现场硬件: 继电器 COM9/CH0 ＋ MAT130 YV200 模组（板载 96701 串行器）＋ MAX96712
 > 解串器 ＋ Dothinkey(MU960) 采集卡；模组固件 v4.1.7（I2C Slave **0x40**）
 
 ---
@@ -17,7 +17,7 @@ tests/conftest.py、7 个 functional 测试文件），把其中**所有外部�
 
 | 模块 | 真机结果 |
 |---|---|
-| (a) 继电器 `modules/relay.py` | ✅ PASS（COM3 全通道开/关、CH0 通断、掉电重启） |
+| (a) 继电器 `modules/relay.py` | ✅ PASS（COM9 全通道开/关、CH0 通断、掉电重启） |
 | (b) 外部设备 `modules/device.py` | ✅ PASS（ini 配置→连接→出图→抓帧存图→FPS/DN，1280×880@25fps） |
 | (c) I2C 读写 `modules/i2c.py` | ✅ PASS（版本/启动信息读、帧计数器递增、写读校验） |
 | (d) 固件下载 `modules/firmware.py` | ✅ PASS（MatFwDownload 真实烧录 44s 成功，回读版本 v4.1.7 确认） |
@@ -119,7 +119,7 @@ device_get_fps / device_get_current_DN / get(set)_device_focus_channel`，
 
 - `modules/log_setup.py` —— 日志 + C++ SDK stdout 噪音过滤（沿用旧工程 OutputFilter 思路并修正了其吞换行的问题）
 - `scripts/common.py` —— 读配置 + 继电器上电 + 设备初始化公共流程
-- `config.json` —— 现场硬件参数（继电器 COM3/CH0、绑定 ini、绑定固件、寄存器表、Flash 分区表）
+- `config.json` —— 现场硬件参数（继电器 COM9/CH0、绑定 ini、绑定固件、寄存器表、Flash 分区表）
 
 ---
 
@@ -132,7 +132,7 @@ device_get_fps / device_get_current_DN / get(set)_device_focus_channel`，
 
 | 验证点 | 方法 | 结果 |
 |---|---|---|
-| 句柄获取 | `get_switcher("COM3")`（CH34x USB 串口） | ✅ |
+| 句柄获取 | `get_switcher("COM9")`（CH34x USB 串口） | ✅ |
 | 整体开关 | `switcher_open/close/reopen` | ✅ 3/3 True |
 | 通道 0 通断 | `close_channel(0)` → `open_channel(0)` | ✅ True |
 | 掉电重启 | `power_cycle(0)`（断 15s → 上电） | ✅ 模组随之重新出图 |
@@ -187,7 +187,7 @@ device_get_fps / device_get_current_DN / get(set)_device_focus_channel`，
    规范掉电须 **≥15s**。
 
 4. **继电器间歇性 get_switcher 失败**
-   Python 进程被强杀后 COM3 短暂未释放所致；`RelayController` 构造与
+   Python 进程被强杀后串口短暂未释放所致；`RelayController` 构造与
    `ensure_open` 带重试后不再复现。
 
 5. **旧工程 output_filter 吞换行**

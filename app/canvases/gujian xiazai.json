@@ -1,0 +1,105 @@
+{
+  "name": "gujian xiazai",
+  "stop_on_fail": true,
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "power.ctrl",
+      "x": 0,
+      "y": 0,
+      "params": {
+        "action": "on",
+        "channel": 0,
+        "port": "",
+        "off_seconds": 15,
+        "wait_after_on": 8
+      }
+    },
+    {
+      "id": "n0z4qn",
+      "type": "fw.download",
+      "x": -1.8852491919101695,
+      "y": 245.43637013756478,
+      "params": {
+        "tier": "release",
+        "bin": "",
+        "ini": "",
+        "retries": 3,
+        "confirm": true,
+        "power_cycle_after": true
+      }
+    },
+    {
+      "id": "nd539d",
+      "type": "device.open",
+      "x": -9.050507666957506,
+      "y": 96.31827711585626,
+      "params": {
+        "ini": "",
+        "auto_power": true
+      }
+    },
+    {
+      "id": "nrqfuv",
+      "type": "device.check",
+      "x": 422.42033961880395,
+      "y": 193.78053286765353,
+      "params": {
+        "ini": "",
+        "ops": [
+          {
+            "op": "capture",
+            "name": "case_frame",
+            "min": "",
+            "max": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "n51qps",
+      "type": "device.open",
+      "x": 210.86605584789217,
+      "y": 198.19020230038205,
+      "params": {
+        "ini": "",
+        "auto_power": true
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "n1",
+      "fromPort": "__out",
+      "to": "nd539d",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "nd539d",
+      "fromPort": "__out",
+      "to": "n0z4qn",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n0z4qn",
+      "fromPort": "__out",
+      "to": "n51qps",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n51qps",
+      "fromPort": "__out",
+      "to": "nrqfuv",
+      "toParam": "__in",
+      "kind": "flow"
+    }
+  ],
+  "view": {
+    "x": 332,
+    "y": 104,
+    "z": 1.044
+  }
+}

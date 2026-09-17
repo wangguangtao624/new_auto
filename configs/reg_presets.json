@@ -1,0 +1,113 @@
+{
+  "_comment": "I²C 常用寄存器预设。在画布的 I²C 节点里点『常用寄存器』直接引用某一条，引用后仍可就地改；改完可另存覆盖。本文件可直接编辑，无需改代码。",
+  "presets": [
+    {
+      "name": "固件版本(主版本号)",
+      "op": "read",
+      "addr": "0x00d8",
+      "mode": "A2D4",
+      "mask": "0x00FF0000",
+      "shift": 16,
+      "expect": "0x04",
+      "desc": "0x01040107 → 主版本 4，即 v4.1.7"
+    },
+    {
+      "name": "固件版本(完整值)",
+      "op": "read",
+      "addr": "0x00d8",
+      "mode": "A2D4",
+      "mask": "0xFFFFFFFF",
+      "shift": 0,
+      "expect": "",
+      "desc": "不断言，只打印回读值"
+    },
+    {
+      "name": "ROM 信息",
+      "op": "read",
+      "addr": "0x00c0",
+      "mode": "A2D4",
+      "mask": "0xFFFFFFFF",
+      "shift": 0,
+      "expect": "0x04fb",
+      "desc": "期望 0x04fb = A/B 区固件均正常"
+    },
+    {
+      "name": "启动区(SRAM)",
+      "op": "read",
+      "addr": "0x00c4",
+      "mode": "A2D4",
+      "mask": "0x00000001",
+      "shift": 0,
+      "expect": "0x00",
+      "desc": "bit0=0 从 A 区启动, 1 从 B 区启动"
+    },
+    {
+      "name": "帧计数器",
+      "op": "read",
+      "addr": "0x00cc",
+      "mode": "A2D4",
+      "mask": "0xFFFFFFFF",
+      "shift": 0,
+      "expect": "",
+      "desc": "间隔再读一次比较，递增=帧计数正常"
+    },
+    {
+      "name": "AWB 开关",
+      "op": "read",
+      "addr": "0x0918",
+      "mode": "A2D2",
+      "mask": "0x0000FFFF",
+      "shift": 0,
+      "expect": "",
+      "desc": "1=开 0=关 (写用同期条的 write)"
+    },
+    {
+      "name": "AE 开关",
+      "op": "read",
+      "addr": "0x091c",
+      "mode": "A2D2",
+      "mask": "0x0000FFFF",
+      "shift": 0,
+      "expect": "",
+      "desc": "1=开 0=关"
+    },
+    {
+      "name": "功能安全报告1",
+      "op": "read",
+      "addr": "0x093c",
+      "mode": "A2D2",
+      "mask": "0x0000FFFF",
+      "shift": 0,
+      "expect": "0x0000",
+      "desc": "任一位置 1 即对应功能安全项错误"
+    },
+    {
+      "name": "功能安全报告2",
+      "op": "read",
+      "addr": "0x0940",
+      "mode": "A2D2",
+      "mask": "0x0000FFFF",
+      "shift": 0,
+      "expect": "0x0000",
+      "desc": "任一位置 1 即对应功能安全项错误"
+    },
+    {
+      "name": "开时钟(升级前)",
+      "op": "write",
+      "addr": "0x04",
+      "mode": "A1D1",
+      "slave": "0x80",
+      "value": "0x43",
+      "desc": "0x80 器件 0x04 写 0x43 开时钟"
+    },
+    {
+      "name": "关时钟(升级后)",
+      "op": "write",
+      "addr": "0x04",
+      "mode": "A1D1",
+      "slave": "0x80",
+      "value": "0x87",
+      "desc": "0x80 器件 0x04 写 0x87 关时钟"
+    }
+  ]
+}

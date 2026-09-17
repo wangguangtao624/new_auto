@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""用例: demo_上电读版本出图  (由画布自动生成, 可直接运行)
+"""用例: case1  (由画布自动生成, 可直接运行)
 
-运行:  python cases/demo_上电读版本出图.py    (在 new_auto 目录下)
+运行:  python cases/case1.py    (在 new_auto 目录下)
 """
 import sys
 from pathlib import Path
@@ -20,14 +20,29 @@ from app.engine.registry import get_node as _gn
 
 def main():
     ctx = Session()
+    ctx.relay('COM9')  # 指定继电器串口
     ctx.ensure_powered(0)
 
+    import time; time.sleep(3)
+
+    _dev = ctx.ensure_configured()
+    ctx.ensure_video()
+    _ok, _path = ctx.image().capture(_dev, '01')
+    assert _ok, '抓帧存图失败'
+    print('[device.stream] 抓帧:', _path)
+    print('[device.stream] fps =', round(_dev.get_fps(), 2))
+    print('[device.stream] dn =', round(_dev.get_dn(), 2))
+
+    vnfx9zk_ok, vnfx9zk_path, vnfx9zk_mean = ctx.image().capture_mean(ctx.ensure_video(), "'img'")
+    assert vnfx9zk_ok, '抓帧测亮度失败'
+    print('[image.capture_mean] mean =', vnfx9zk_mean)
+
     from modules.i2c import I2CController as _I
-    _m_def = _I_MODE['A2D4']
+    _m_def = _I_MODE['A2D2']
     _i2c = ctx.i2c()
     _slave = 0x40
     _results = []
-    _OPS = 'read 0x00d8 A2D4\n# 断言固件主版本号 == 4\nexpect 0x00d8 0x04 0x00FF0000 16 A2D4'
+    _OPS = 'read 0x00d8 A2D4\nwrite 0x0938 0x0001 A2D2'
     for _raw in str(_OPS).splitlines():
         _line = _raw.split('#')[0].strip()
         if not _line: continue
@@ -64,13 +79,21 @@ def main():
             raise RuntimeError(f'未知操作: {_op}')
     print('[i2c.batch] 全部通过')
 
+    import time; time.sleep(3)
+
+    vnwyclr_ok, vnwyclr_path, vnwyclr_mean = ctx.image().capture_mean(ctx.ensure_video(), "'img'")
+    assert vnwyclr_ok, '抓帧测亮度失败'
+    print('[image.capture_mean] mean =', vnwyclr_mean)
+
     _dev = ctx.ensure_configured()
     ctx.ensure_video()
-    _ok, _path = ctx.image().capture(_dev, 'demo')
+    _ok, _path = ctx.image().capture(_dev, '02')
     assert _ok, '抓帧存图失败'
     print('[device.stream] 抓帧:', _path)
     print('[device.stream] fps =', round(_dev.get_fps(), 2))
+    print('[device.stream] dn =', round(_dev.get_dn(), 2))
 
+    ctx.relay('COM9')  # 指定继电器串口
     ctx.power_off(0)
 
     print('用例执行完成: 全部节点通过')

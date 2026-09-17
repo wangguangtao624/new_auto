@@ -38,20 +38,6 @@ def load_api_key() -> str:
     return ""
 
 
-def agent_status() -> dict:
-    """返回 AI 可用性元数据，绝不返回 API Key 本身。"""
-    cfg = agent_cfg()
-    env_key = bool(os.environ.get("SENSENOVA_API_KEY", "").strip())
-    key_file = ROOT / cfg.get("api_key_file", "app/agent_key.local")
-    file_key = key_file.exists() and bool(key_file.read_text(encoding="utf-8").strip())
-    return {
-        "configured": env_key or file_key,
-        "key_source": "environment" if env_key else ("local_file" if file_key else None),
-        "key_file": str(key_file.relative_to(ROOT)),
-        "base_url": cfg.get("base_url", ""),
-    }
-
-
 def chat_completion(messages: list, model: str = None, temperature: float = 0.3,
                     timeout: int = 180) -> str:
     """调用 OpenAI 兼容 chat/completions, 返回助手文本 (429 限流自动重试)"""
@@ -124,10 +110,19 @@ def build_system_prompt() -> str:
         "3. 坐标: 按执行顺序 x=100, y 每步 +150; x/y 必须是数字\n"
         "4. params 的键名和取值只能用下方 schema 列出的参数, 不要发明参数; "
         "布尔参数用 true/false\n"
-        "5. 优先使用合并节点: 继电器用 relay.ctrl(动作在 params.action 选 on/off/cycle), "
-        "I2C 多条读写+断言用 i2c.batch(写在 params.ops, 每行一条), "
-        "出图+抓帧+FPS 用 device.stream(勾选项 capture/read_fps/read_dn)\n"
-        "6. 不要添加用户没提的步骤; i2c.batch 的 ops 里每行一条指令\n\n"
+        "5. 只用这些可见节点, 不要发明或使用旧节点名: "
+        "power.ctrl(上电/断电/循环, 看 params.action)、device.open(下发 ini 并打开设备)、"
+        "device.check(出图与检查, 操作列表在 params.ops)、device.close(关闭设备)、"
+        "i2c.seq(逐条读写, 指令在 params.ops)、fw.download(烧录固件)、flow.delay、flow.log。"
+        "禁止使用 relay.ctrl / i2c.batch / device.stream 等旧节点\n"
+        "6. i2c.seq 的 params.ops 每行一条, 每行必须自带: op(read/write/read_verify/write_verify)、"
+        'addr(如 "0x00d8")、mode(位宽, 形如 "A<地址字节数>D<数据字节数>", 如 A2D4/A2D2/A1D1); '
+        "要断言就填 expect(与回读值按 mask 遮罩、shift 右移后比较, 默认全等, 留空则只打印不断言)\n"
+        "7. device.check 的 params.ops 每行一项, op 取 "
+        "capture(抓帧存图)/open_video/close_video/read_fps/read_dn\n"
+        "8. 电源被切断之后(device.close 勾了顺带断电、或 fw.download 烧完会掉电重启 15s), "
+        "必须再跟一个 device.open 节点重新打开设备, 否则后续出图会失败\n"
+        "9. 不要添加用户没提的步骤, 也不要画蛇添足加多余检查\n\n"
         "节点 schema:\n" + _condensed_schema() +
         "\n\n可用 ini 文件: " + ", ".join(ini_files) +
         "\n常用固件寄存器 (slave 0x40): 0x00d8 固件版本(A2D4, 主版本=(值&0xFF0000)>>16), "

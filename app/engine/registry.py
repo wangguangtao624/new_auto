@@ -76,6 +76,13 @@ NODES = {}
 DEBUG = {}   # "type:action" -> {type, name, label, run(ctx, params)}
 HIDDEN_LEGACY = []   # 旧版细分节点: 保持可执行(兼容旧画布)但不在面板显示
 
+# 面板白名单: 收敛后的常用节点 (顺序即显示顺序)
+_PALETTE_ORDER = ["power.ctrl", "device.open", "device.check", "device.close",
+                  "i2c.seq", "fw.download", "flow.delay", "flow.log"]
+_PALETTE_TYPES = set(_PALETTE_ORDER)
+# 低频但保留: 放在面板底部的「高级节点」分组
+_ADVANCED_TYPES = {"fw.soc_reboot", "fw.erase", "fw.crc_check"}
+
 
 def node(type, group, title, desc="", color="#4a89dc", params=None,
          inputs=None, outputs=None, debug=None):
@@ -385,33 +392,82 @@ def _img_compare(ctx, params, inputs):
 
 # ============================ 固件 ============================
 
-@node("fw.download", "固件模块", "一键固件下载", "MatFwDownload 烧录固件 (需勾选确认)", "#e07b39",
+@node("fw.download", "固件模块", "固件下载", "ini + bin 可选, 实时进度 (未选 ini=继承项目, 默认 Release)", "#e07b39",
       params=[
-          {"name": "ini", "label": "ini 文件", "type": "choice", "default": None,
-           "options": _ini_options(), "optional": True},
-          {"name": "bin", "label": "固件文件", "type": "choice", "default": None,
-           "options": _fw_options(), "optional": True},
+          {"name": "tier", "label": "固件档位", "type": "choice", "default": "release",
+           "options": [{"v": "release", "l": "Release (默认)"},
+                       {"v": "debug", "l": "Debug"}]},
+          {"name": "bin", "label": "固件文件 (留空=跟随档位)", "type": "choice",
+           "default": "", "options": [{"v": "", "l": "跟随档位(推荐)"}] + [
+               {"v": n, "l": n} for n in _fw_options()], "optional": True},
+          {"name": "ini", "label": "ini 文件 (留空=继承项目)", "type": "choice",
+           "default": "", "options": [{"v": "", "l": "继承(推荐)"}] + [
+               {"v": n, "l": n} for n in _ini_options()], "optional": True},
           {"name": "retries", "label": "重试次数", "type": "int", "default": 3},
           {"name": "confirm", "label": "确认真实烧录", "type": "bool", "default": False},
+          {"name": "power_cycle_after", "label": "烧完自动掉电重启", "type": "bool", "default": True},
       ],
-      outputs={"ok": "是否成功"})
+      outputs={"ok": "是否成功", "bin": "实际烧录的固件"})
 def _fw_download(ctx, params, inputs):
+    import time as _t
+    from modules.firmware import FW_STATUS_FAILED, FW_STATUS_IN_PROGRESS, describe_fw_error
     if not params.get("confirm"):
         raise RuntimeError("未勾选『确认真实烧录』, 已跳过 (防误烧)")
+    proj = ctx.project()
+    fw_cfg = proj.get("firmware", {})
+    tier = str(params.get("tier") or "release").lower()
+    bin_name = (params.get("bin") or "").strip()
+    if not bin_name or bin_name == "__tier__":
+        bin_name = fw_cfg.get(tier) or fw_cfg.get("release")
+    if not bin_name:
+        raise RuntimeError(
+            f"档位 {tier} 未在项目配置里绑定固件 — 补上 config.json 的 "
+            f"project.firmware.{tier}, 或在本节点手动指定固件文件")
+    ini_path = ctx.resolve_ini(params.get("ini"))
+    bin_path = ROOT / "fw" / Path(bin_name).name
+    if not bin_path.exists():
+        raise RuntimeError(f"固件文件不存在: {bin_path}")
+
+    ctx.emit_log("fw.download", {"档位": tier, "bin": bin_path.name,
+                                 "ini": Path(ini_path).name,
+                                 "固件路径": str(bin_path)},
+                 text="开始固件下载")
     ctx.ensure_powered()
-    ini = params.get("ini") or Path(ctx.default_ini()).name
-    bin_name = params.get("bin") or (sorted((ROOT / "fw").glob("*.bin"))[0].name)
-    ok = ctx.fw_downloader().download(
-        str(ROOT / "configs" / "init_file" / Path(ini).name),
-        str(ROOT / "fw" / Path(bin_name).name),
-        max_retries=int(params.get("retries", 3)))
+
+    last_error = [""]
+    t0 = _t.time()
+    _last_pct = [-1]
+
+    def on_fw_event(status, progress, err):
+        if status == FW_STATUS_IN_PROGRESS:
+            if progress is None or progress < 0:
+                return
+            # 节流: 百分比变化才推, 避免高频刷屏
+            step = max(1, progress // 5 * 5)
+            if progress != _last_pct[0] and (progress % 5 == 0 or progress >= 100):
+                _last_pct[0] = progress
+                ctx.emit_progress("烧录", progress, f"{progress}%")
+        elif status == FW_STATUS_FAILED:
+            last_error[0] = describe_fw_error(err) if err else "未知错误"
+            ctx.emit_log("fw.download", {"err": last_error[0]},
+                         level="error", result="fail", text="烧录失败")
+
+    ok = ctx.fw_downloader().download(str(ini_path), str(bin_path),
+                                     max_retries=int(params.get("retries", 3)),
+                                     on_event=on_fw_event)
     if not ok:
-        raise RuntimeError("MatFwDownload 失败")
+        raise RuntimeError(f"MatFwDownload 失败: {last_error[0] or '重试耗尽'}")
+    cost = round(_t.time() - t0, 1)
+    ctx.emit_log("fw.download", {"耗时": f"{cost}s", "bin": bin_path.name},
+                 result="pass", text="烧录完成")
     # 烧完掉电重启, 后续节点需重新配置
-    ctx.power_off()
-    time.sleep(15)
-    ctx.ensure_powered()
-    return {"ok": True}
+    if params.get("power_cycle_after", True):
+        off = float(ctx.cfg["relay"].get("power_cycle_off_seconds", 15))
+        ctx.emit_log("fw.download", {"断电": f"{off}s"}, text="掉电重启 (设备句柄将重建)")
+        ctx.power_off()
+        _t.sleep(off)
+        ctx.ensure_powered()
+    return {"ok": True, "bin": bin_name}
 
 
 @node("fw.soc_reboot", "固件模块", "SOC 重启", "firmware_socReboot", "#e07b39",
@@ -872,12 +928,441 @@ def _dev_stream(ctx, params, inputs):
     return outs
 
 
+# ============================ 收敛后的常用节点 (v2) ============================
+#
+# 面板只显示 PALETTE_TYPES 里的节点; 其余旧节点保持可执行 (兼容旧画布)。
+
+_GRP_MAIN = "常用节点"
+
+_POWER_ACTIONS = [{"v": "on", "l": "上电"},
+                  {"v": "off", "l": "断电"},
+                  {"v": "cycle", "l": "掉电重启 (断电→上电)"}]
+
+_INI_INHERIT_OPTS = ([{"v": "", "l": "继承(推荐)"}] +
+                     [{"v": n, "l": n} for n in _ini_options()])
+
+
+@node("power.ctrl", _GRP_MAIN, "电源开关", "上电 / 断电 / 掉电重启, 一个下拉搞定", "#e8b339",
+      params=[
+          {"name": "action", "label": "动作", "type": "choice", "default": "on",
+           "options": _POWER_ACTIONS},
+          {"name": "channel", "label": "通道", "type": "int", "default": 0},
+          _RELAY_PORT_PARAM,
+          {"name": "off_seconds", "label": "掉电重启断电时长(s)", "type": "float", "default": 15},
+          {"name": "wait_after_on", "label": "上电后等待固件启动(s)", "type": "float", "default": 8},
+      ],
+      outputs={"ok": "是否成功"},
+      debug=[{"name": "scan_ports", "label": "扫描串口(探测继电器)"},
+             {"name": "probe_channel", "label": "测试通道响应(通→断→通)"}])
+def _power_ctrl(ctx, params, inputs):
+    port = _relay_port(params)
+    if port:
+        ctx.relay(port)
+    ch = int(params.get("channel", 0) if params.get("channel") is not None
+             else ctx.cfg["relay"]["channel"])
+    action = params.get("action", "on")
+    off_s = float(params.get("off_seconds", 15) or ctx.cfg["relay"].get("power_cycle_off_seconds", 15))
+    wait = float(params.get("wait_after_on", 8))
+    ctx.emit_log("power", {"动作": dict((o["v"], o["l"]) for o in _POWER_ACTIONS).get(action, action),
+                           "通道": ch, "串口": port or ctx.cfg["relay"]["port"]})
+    if action == "on":
+        ctx.ensure_powered(ch)
+        if wait > 0:
+            time.sleep(wait)
+    elif action == "off":
+        ctx.power_off(ch)
+    elif action == "cycle":
+        ctx.power_off(ch)
+        ctx.emit_log("power", {"断电保持": f"{off_s}s"}, text="掉电中")
+        time.sleep(off_s)
+        ctx.ensure_powered(ch)
+        if wait > 0:
+            time.sleep(wait)
+    else:
+        raise RuntimeError(f"未知动作: {action}")
+    ctx.emit_log("power", {}, result="pass", text="电源操作完成")
+    return {"ok": True}
+
+
+@debug_action("power.ctrl", "scan_ports", "扫描串口")
+def _dbg_scan_power(ctx, params):
+    return scan_relay_ports()
+
+
+@debug_action("power.ctrl", "probe_channel", "测试通道响应")
+def _dbg_probe_power(ctx, params):
+    relay = ctx.relay(_relay_port(params))
+    ch = int(params.get("channel", 0))
+    o1 = relay.open_channel(ch)
+    c = relay.close_channel(ch)
+    o2 = relay.open_channel(ch)
+    ok = o1 and c and o2
+    return {"ok": ok, "report": f"通道{ch} 导通={o1} 断开={c} 再导通={o2} -> "
+            f"{'继电器响应正常' if ok else '存在失败项, 请检查接线/串口'}"}
+
+
+@node("device.open", _GRP_MAIN, "打开设备", "绑 ini (默认继承项目) + 上电 + 建立会话", "#4a89dc",
+      params=[
+          {"name": "ini", "label": "ini 文件 (留空=继承项目)", "type": "choice",
+           "default": "", "options": _INI_INHERIT_OPTS, "optional": True},
+          {"name": "auto_power", "label": "自动先上电", "type": "bool", "default": True},
+      ],
+      outputs={"ok": "是否成功", "ini": "本次绑定的 ini"})
+def _device_open(ctx, params, inputs):
+    ini = ctx.resolve_ini(params.get("ini"))
+    ctx.emit_log("device.open", {"ini": Path(ini).name,
+                                 "自动上电": "是" if params.get("auto_power", True) else "否"})
+    if params.get("auto_power", True):
+        ctx.ensure_powered()
+        time.sleep(float(ctx.cfg["device"].get("configure_wait_seconds", 10) and 8))
+    ctx.current_ini = ini
+    ctx.ensure_configured(ini)
+    return {"ok": True, "ini": Path(ini).name}
+
+
+@node("device.close", _GRP_MAIN, "关闭设备", "关视频 + 释放设备句柄 (可选断电)", "#4a89dc",
+      params=[
+          {"name": "power_off", "label": "顺带断电", "type": "bool", "default": False},
+      ],
+      outputs={"ok": "是否成功"})
+def _device_close(ctx, params, inputs):
+    ctx.video_off()
+    ctx.emit_log("device.close", {}, result="pass", text="视频流已关闭")
+    if params.get("power_off"):
+        ctx.power_off()
+        ctx.emit_log("power", {"动作": "断电"}, result="pass")
+    return {"ok": True}
+
+
+# ---- device.check 的可选操作表 (前端据此渲染下拉) ----
+
+_CHECK_OP_SCHEMA = [
+    {"op": "open_video", "label": "打开视频流", "params": []},
+    {"op": "capture", "label": "抓帧存图",
+     "params": [{"name": "name", "label": "文件名前缀", "type": "str", "default": "case_frame"}]},
+    {"op": "fps", "label": "读 FPS",
+     "params": [{"name": "min", "label": "下限(留空不断言)", "type": "str", "default": ""}]},
+    {"op": "dn", "label": "读 DN 亮度",
+     "params": [{"name": "min", "label": "下限", "type": "str", "default": ""},
+                {"name": "max", "label": "上限", "type": "str", "default": ""}]},
+    {"op": "brightness", "label": "出图检查(亮度均值)",
+     "params": [{"name": "min", "label": "下限", "type": "str", "default": ""},
+                {"name": "max", "label": "上限", "type": "str", "default": ""},
+                {"name": "name", "label": "文件名前缀", "type": "str", "default": "chk_frame"}]},
+    {"op": "freeze", "label": "出图检查(画面是否冻结)",
+     "params": [{"name": "interval", "label": "两次抓帧间隔(s)", "type": "float", "default": 2}]},
+    {"op": "close_video", "label": "关闭视频流", "params": []},
+]
+_CHECK_OP_LABEL = {o["op"]: o["label"] for o in _CHECK_OP_SCHEMA}
+
+
+def _num(v, default=None):
+    """阈值可能是 '25'/'0x19'/'' """
+    if v is None or str(v).strip() == "":
+        return default
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip()
+    return float(int(s, 16) if s.lower().startswith("0x") else float(s))
+
+
+@node("device.check", _GRP_MAIN, "出图与检查",
+      "节点内有序操作列表: 打开视频流 / 抓帧 / 读FPS / 读DN / 出图检查 / 关流 (可拖拽排序)", "#4a89dc",
+      params=[
+          {"name": "ini", "label": "ini 文件 (留空=继承 open)", "type": "choice",
+           "default": "", "options": _INI_INHERIT_OPTS, "optional": True},
+          {"name": "ops", "label": "操作序列", "type": "oplist",
+           "default": [{"op": "open_video"}]},
+      ],
+      outputs={"ok": "是否成功", "fps": "帧率", "dn": "DN 亮度", "path": "图片路径"})
+def _device_check(ctx, params, inputs):
+    ini = ctx.resolve_ini(params.get("ini"))
+    ctx.current_ini = ini
+    dev = ctx.ensure_configured(ini)
+    outs = {"ok": True, "fps": None, "dn": None, "path": None}
+    ops = params.get("ops") or []
+    if isinstance(ops, str):
+        ops = [o.strip() for o in ops.splitlines() if o.strip()]
+    video_ready = False
+    for i, item in enumerate(ops, 1):
+        if isinstance(item, str):
+            item = {"op": item}
+        op = str(item.get("op", "")).strip()
+        label = _CHECK_OP_LABEL.get(op, op)
+        ctx.emit_log("device.check", {"序号": i, "操作": label}, text=label)
+        if op == "open_video":
+            ctx.ensure_video()
+            video_ready = True
+        elif op == "close_video":
+            ctx.video_off()
+            video_ready = False
+        elif op in ("capture", "fps", "dn", "brightness", "freeze"):
+            if not video_ready:
+                ctx.ensure_video()
+                video_ready = True
+            if op == "capture":
+                name = str(item.get("name") or "case_frame")
+                ok, path = ctx.image().capture(dev, name)
+                if not ok:
+                    raise RuntimeError("抓帧存图失败 (可重试或掉电重启模组)")
+                outs["path"] = str(path)
+                ctx.emit_log("device.check", {"文件": Path(path).name},
+                             result="pass", text="抓帧已保存")
+            elif op == "fps":
+                v = round(dev.get_fps(), 2)
+                outs["fps"] = v
+                lo = _num(item.get("min"))
+                ok = lo is None or v >= lo
+                ctx.emit_log("device.check", {"FPS": v, "下限": lo if lo is not None else "-"},
+                             result="pass" if ok else "fail",
+                             level="info" if ok else "error",
+                             text="FPS 检查通过" if ok else f"FPS {v} 低于下限 {lo}")
+                if not ok:
+                    raise RuntimeError(f"FPS {v} 低于下限 {lo}")
+            elif op == "dn":
+                v = round(dev.get_dn(), 2)
+                outs["dn"] = v
+                lo, hi = _num(item.get("min")), _num(item.get("max"))
+                ok = (lo is None or v >= lo) and (hi is None or v <= hi)
+                ctx.emit_log("device.check", {"DN": v, "下限": lo if lo is not None else "-",
+                                              "上限": hi if hi is not None else "-"},
+                             result="pass" if ok else "fail",
+                             level="info" if ok else "error",
+                             text="DN 检查通过" if ok else f"DN {v} 超出范围 [{lo}, {hi}]")
+                if not ok:
+                    raise RuntimeError(f"DN {v} 超出范围 [{lo}, {hi}]")
+            elif op == "brightness":
+                name = str(item.get("name") or "chk_frame")
+                okc, path, mean = ctx.image().capture_mean(dev, name)
+                if not okc:
+                    raise RuntimeError("出图检查抓帧失败")
+                outs["path"] = str(path)
+                lo, hi = _num(item.get("min")), _num(item.get("max"))
+                chk = (lo is None or mean >= lo) and (hi is None or mean <= hi)
+                ctx.emit_log("device.check", {"亮度均值": round(mean, 2),
+                                              "下限": lo if lo is not None else "-",
+                                              "上限": hi if hi is not None else "-",
+                                              "文件": Path(path).name},
+                             result="pass" if chk else "fail",
+                             level="info" if chk else "error",
+                             text="出图检查通过" if chk else f"亮度均值 {round(mean,2)} 超出范围")
+                if not chk:
+                    raise RuntimeError(f"出图检查失败: 亮度均值 {round(mean, 2)}")
+            elif op == "freeze":
+                interval = float(item.get("interval") or 2)
+                ok1, p1 = ctx.image().capture(dev, "fz_a")
+                time.sleep(interval)
+                ok2, p2 = ctx.image().capture(dev, "fz_b")
+                if not (ok1 and ok2):
+                    raise RuntimeError("冻结检查抓帧失败")
+                diff = ctx.image().compare_frames(p1, p2)
+                moving = bool(diff and diff.get("changed"))
+                ctx.emit_log("device.check", {"间隔": f"{interval}s",
+                                              "差异": diff.get("desc") if diff else "-"},
+                             result="pass" if moving else "fail",
+                             level="info" if moving else "error",
+                             text="画面在变化" if moving else "两次抓帧无变化: 画面可能冻结")
+                if not moving:
+                    raise RuntimeError("画面冻结: 两次抓帧无变化")
+        else:
+            raise RuntimeError(f"未知操作 {op!r}")
+    return outs
+
+
+NODES["device.check"]["ops_schema"] = _CHECK_OP_SCHEMA
+
+
+# ---- i2c.seq ----
+
+# 每条指令都是完整的一次操作, 位宽模式逐条指定 (不再有"全局默认模式")
+_I2C_OP_LABEL = {"read": "读",
+                 "read_verify": "读并校验",
+                 "write": "写",
+                 "write_verify": "写并回读校验",
+                 "verify": "写并回读校验"}      # verify = 旧名, 兼容老画布
+
+# 前端表单用 (顺序即下拉顺序)
+_I2C_OP_OPTIONS = [
+    {"v": "read", "l": "读"},
+    {"v": "read_verify", "l": "读并校验(回读 vs 期待值)"},
+    {"v": "write", "l": "写"},
+    {"v": "write_verify", "l": "写并回读校验"},
+]
+
+
+def _i2c_cmp(v, mask, shift):
+    return (v & mask) >> shift
+
+
+@node("i2c.seq", _GRP_MAIN, "I²C 读写",
+      "表单式读写序列: 统一 Slave, 每条指令自带位宽模式; 读/写都可填期待值做回读校验", "#3faf6e",
+      params=[
+          {"name": "slave", "label": "Slave ID", "type": "str", "default": "0x40", "hex": True},
+          {"name": "on_fail", "label": "某条校验不通过时", "type": "choice", "default": "stop",
+           "options": [{"v": "stop", "l": "立即停止 (默认)"},
+                       {"v": "continue", "l": "继续执行剩余指令"}]},
+          {"name": "ops", "label": "读写指令 (每行一条, 模式逐条指定)", "type": "i2ctable",
+           "default": [{"op": "read", "addr": "0x00d8", "mode": "A2D4", "value": "",
+                        "expect": "", "mask": "0xFFFFFFFF", "shift": "0", "slave": ""}]},
+      ],
+      outputs={"ok": "是否全部通过", "values": "逐条结果"})
+def _i2c_seq(ctx, params, inputs):
+    i2c = ctx.i2c()
+    def_slave = _hex(params.get("slave"), ctx.default_slave())
+    # "某条校验不通过时": stop=立即中断(默认) / continue=跑完所有指令再汇总报错
+    on_fail = str(params.get("on_fail") or "stop").lower()
+    # 旧画布的「默认位宽模式」: 仅作为缺失 mode 时的兜底, 新表单不会写入
+    legacy_mode = params.get("mode")
+    rows = params.get("ops") or []
+    ctx.emit_log("i2c.seq", {"slave": f"0x{def_slave:02x}", "条数": len(rows),
+                             "失败策略": "继续" if on_fail == "continue" else "停止"},
+                 text="I²C 序列开始")
+    values = []
+    fails = []
+    for i, row in enumerate(rows, 1):
+        if isinstance(row, str):        # 兼容旧的字符串写法 "read 0x00d8 A2D4"
+            parts = row.split()
+            row = {"op": parts[0], "addr": parts[1] if len(parts) > 1 else "0x0",
+                   "value": parts[2] if len(parts) > 2 else "",
+                   "mode": parts[-1] if len(parts) > 2 and not str(parts[-1]).isdigit()
+                           and str(parts[-1]).upper().startswith("A") else legacy_mode}
+        op = str(row.get("op", "read")).lower()
+        if op == "verify":              # 旧名 -> 新名
+            op = "write_verify"
+        addr = _hex(row.get("addr"), 0)
+        mode = str(row.get("mode") or "").strip().upper()
+        if not mode:
+            if not legacy_mode:
+                raise RuntimeError(f"第 {i} 条指令未指定位宽模式 (如 A2D4) —— "
+                                   f"每条指令都要单独指定")
+            mode = legacy_mode
+        al, bits = _mode(mode)
+        slave = _hex(row.get("slave"), def_slave) if row.get("slave") else def_slave
+        head = {"序号": i, "slave": f"0x{slave:02x}", "地址": f"0x{addr:04x}", "模式": mode}
+
+        if op in ("read", "read_verify"):
+            okr, v = i2c.read(addr, slave=slave, addr_len=al, bits=bits)
+            if not okr:
+                ctx.emit_log("i2c.read", {**head, "回读": "读取失败"},
+                             level="error", result="fail", text="读失败")
+                raise RuntimeError(f"读失败 addr=0x{addr:04x}")
+            exp_raw = str(row.get("expect") or "").strip()
+            if op == "read_verify" and not exp_raw:
+                raise RuntimeError(f"第 {i} 条『读并校验』必须填期待值 "
+                                   f"(addr=0x{addr:04x})")
+            base = {**head, "回读": f"0x{v:0{bits // 4}x}"}
+            if not exp_raw:             # 读但不断言: 只打印回读值
+                ctx.emit_log("i2c.read", base, result="pass", text="读 ok (未断言)")
+                values.append({"op": op, "addr": addr, "value": v, "assert": None})
+                continue
+            exp = _hex(exp_raw, 0)
+            mask = _hex(row.get("mask"), 0xFFFFFFFF)
+            shift = int(row.get("shift") or 0)
+            actual = _i2c_cmp(v, mask, shift)
+            ok = actual == exp
+            ctx.emit_log("i2c.read", {**base, "遮罩": f"0x{mask:08x}", "右移": shift,
+                                      "期待": f"0x{exp:x}"},
+                         result="pass" if ok else "fail",
+                         level="info" if ok else "error",
+                         text="回读校验通过" if ok else
+                         f"回读校验失败: 期望 0x{exp:x}, 实际 0x{actual:x}, "
+                         f"(回读 0x{v:x} & 0x{mask:x}) >> {shift} = 0x{actual:x}")
+            values.append({"op": op, "addr": addr, "value": v,
+                           "assert": {"expect": exp, "mask": mask,
+                                      "shift": shift, "ok": ok}})
+            if not ok:
+                msg = (f"第 {i} 条回读校验失败 addr=0x{addr:04x}: "
+                       f"期望 0x{exp:x}, 实际 0x{actual:x}")
+                if on_fail != "continue":
+                    raise RuntimeError(msg)
+                fails.append(msg)
+        elif op in ("write", "write_verify"):
+            val = _hex(row.get("value"), 0)
+            if not i2c.write(addr, val, slave=slave, addr_len=al, bits=bits):
+                ctx.emit_log("i2c.write", {**head, "写入": f"0x{val:x}"},
+                             level="error", result="fail", text="写失败")
+                raise RuntimeError(f"写失败 addr=0x{addr:04x} val=0x{val:x}")
+            fields = {**head, "写入": f"0x{val:0{bits // 4}x}"}
+            if op == "write":
+                ctx.emit_log("i2c.write", fields, result="pass", text="写 ok")
+            else:
+                okr, back = i2c.read(addr, slave=slave, addr_len=al, bits=bits)
+                if not okr:
+                    ctx.emit_log("i2c.verify", {**fields, "回读": "读取失败"},
+                                 level="error", result="fail", text="回读失败")
+                    raise RuntimeError(f"回读失败 addr=0x{addr:04x}")
+                exp_raw = str(row.get("expect") or "").strip()
+                mask = _hex(row.get("mask"), 0xFFFFFFFF)
+                shift = int(row.get("shift") or 0)
+                if exp_raw:
+                    # 写并回读校验(带期待值): 回读值 与 期待值 比较
+                    exp = _hex(exp_raw, 0)
+                    actual = _i2c_cmp(back, mask, shift)
+                    extra = {"遮罩": f"0x{mask:08x}", "右移": shift, "期待": f"0x{exp:x}"}
+                    ok_txt = "回读校验通过"
+                    bad_txt = (f"回读校验失败: 期望 0x{exp:x}, 实际 0x{actual:x}, "
+                               f"(回读 0x{back:x} & 0x{mask:x}) >> {shift} = 0x{actual:x}")
+                    err = (f"回读校验失败 addr=0x{addr:04x}: "
+                           f"期望 0x{exp:x}, 实际 0x{actual:x}")
+                else:
+                    # 没填期待值: 与写入值比较 (回归语义)
+                    exp, actual = val, back
+                    extra = {}
+                    ok_txt = "回读一致"
+                    bad_txt = f"回读不一致: 写 0x{val:x}, 回读 0x{back:x}"
+                    err = (f"回读校验不一致 addr=0x{addr:04x}: "
+                           f"写 0x{val:x}, 回读 0x{back:x}")
+                ok = actual == exp
+                ctx.emit_log("i2c.verify",
+                             {**fields, "回读": f"0x{back:0{bits // 4}x}", **extra},
+                             result="pass" if ok else "fail",
+                             level="info" if ok else "error",
+                             text=ok_txt if ok else bad_txt)
+                values.append({"op": op, "addr": addr, "value": val,
+                               "readback": back,
+                               "assert": {"expect": exp, "mask": mask,
+                                          "shift": shift, "ok": ok}})
+                if not ok:
+                    msg = f"第 {i} 条{err}"
+                    if on_fail != "continue":
+                        raise RuntimeError(msg)
+                    fails.append(msg)
+        else:
+            raise RuntimeError(f"未知操作 {op!r} (支持 read/read_verify/write/write_verify)")
+    if fails:
+        ctx.emit_log("i2c.seq", {"不通过": len(fails), "总条数": len(rows)},
+                     level="error", result="fail",
+                     text=f"I²C 序列有 {len(fails)} 条未通过 (已跑完剩余指令)")
+        raise RuntimeError(f"{len(fails)} 条校验未通过: " + " | ".join(fails[:5])
+                           + (" …" if len(fails) > 5 else ""))
+    ctx.emit_log("i2c.seq", {"条数": len(rows)}, result="pass", text="I²C 序列全部通过")
+    return {"ok": True, "values": values}
+
+
+NODES["i2c.seq"]["op_options"] = _I2C_OP_OPTIONS
+NODES["i2c.seq"]["presets_hint"] = "configs/reg_presets.json"
+
+
 def get_registry():
-    """返回给前端的节点 schema (去掉 run 函数)"""
+    """返回给前端的节点 schema (去掉 run 函数)
+
+    只暴露 PALETTE_TYPES 里的节点; 旧节点保持可执行, 但不在面板/右键菜单显示。
+    """
     all_nodes = [{k: v for k, v in n.items() if k != "run"} for n in NODES.values()]
+    order = {t: i for i, t in enumerate(_PALETTE_ORDER)}
+    vis = []
     for n in all_nodes:
-        n["hidden"] = n["type"] in HIDDEN_LEGACY
-    return all_nodes
+        t = n["type"]
+        n["hidden"] = t not in _PALETTE_TYPES and t not in _ADVANCED_TYPES
+        n["advanced"] = t in _ADVANCED_TYPES
+        if t in _PALETTE_TYPES:
+            n["group"] = "常用节点"
+        elif t in _ADVANCED_TYPES:
+            n["group"] = "高级节点"
+        vis.append(n)
+    vis.sort(key=lambda n: (0 if not n["hidden"] else 1,
+                            order.get(n["type"], 99)))
+    return vis
 
 
 def get_node(type):

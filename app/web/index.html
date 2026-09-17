@@ -4,32 +4,38 @@
 <meta charset="utf-8">
 <title>new_auto 拖拽式自动化测试</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234a89dc'/%3E%3Cpath d='M9 21 L16 9 L23 21' stroke='%23fff' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='16' cy='21' r='2.6' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="/web/style.css">
 </head>
 <body>
 <div id="topbar">
-  <span id="logo">⬡ new_auto <small>FLOW LAB</small></span>
-  <span id="shortcut-hint" title="Ctrl+S 保存；Ctrl+Enter 运行；? 打开帮助">Ctrl+S 保存 · Ctrl+Enter 运行</span>
-  <button id="btn-ai-quick" class="ai-quick" title="打开 AI 用例生成器">AI 生成用例 <span id="ai-top-status" class="signal" aria-label="AI 配置状态"></span></button>
+  <span id="logo">⬡ new_auto</span>
   <select id="canvas-list" title="选择画布"></select>
   <button id="btn-new">新建</button>
   <button id="btn-rename">重命名</button>
   <button id="btn-delete" class="danger">删除</button>
   <span class="sep"></span>
+  <button id="btn-undo" title="撤销 (Ctrl+Z)">↶ 撤销</button>
+  <button id="btn-redo" title="重做 (Ctrl+Shift+Z)">↷ 重做</button>
+  <span class="sep"></span>
   <label class="chk"><input type="checkbox" id="chk-stopfail" checked> 失败即停</label>
   <span class="sep"></span>
-  <button id="btn-save" title="Ctrl+S">💾 保存画布</button>
-  <button id="btn-run" class="primary" title="Ctrl+Enter">▶ 运行</button>
+  <button id="btn-save">💾 保存画布</button>
+  <button id="btn-run" class="primary">▶ 运行</button>
+  <button id="btn-rununtil" title="把选中节点的上游依赖链跑一遍再停在它这里">⤵ 运行到此</button>
   <button id="btn-gencode">⇩ 生成代码</button>
+  <button id="btn-project" title="项目配置: 默认 ini / Release·Debug 固件 / 寄存器预设">⚙ 项目配置</button>
+  <button id="btn-history" title="运行历史">🕘 历史</button>
   <button id="btn-gallery" title="抓帧图片预览">🖼 图片</button>
   <button id="btn-help" title="连线与操作说明">❓ 帮助</button>
+  <span id="sess-chip" class="sess-chip" title="硬件会话状态">会话: 未开</span>
+  <span id="dirty-dot" class="dirty-dot hidden" title="有未保存的修改">●</span>
   <span id="status" class="status"></span>
 </div>
 
 <div id="main">
   <div id="palette">
-    <div class="pal-title"><span>模块库</span><small>拖入画布或双击添加</small></div>
-    <label class="palette-search"><span>⌕</span><input id="palette-filter" type="search" placeholder="搜索节点、能力或寄存器"></label>
+    <div class="pal-title">模块面板（拖入画布 / 双击添加）</div>
     <div id="palette-groups"></div>
   </div>
 
@@ -44,18 +50,36 @@
       <button id="zoom-fit" title="内容居中">⛶</button>
     </div>
     <div id="rundock" class="collapsed">
+      <div id="dock-resizer" title="拖动调整高度 (双击复位)"></div>
       <div class="dock-head" id="dock-head">
-        <span id="dock-dot"></span><b>运行监控</b>
+        <span id="dock-dot"></span><b id="dock-title">运行日志</b>
         <span id="dock-info">空闲</span>
         <span class="dock-spacer"></span>
-        <button id="dock-clear" title="清空日志">清空</button>
+        <span id="dock-logtools">
+          <button class="dock-tab on" data-filter="all">全部</button>
+          <button class="dock-tab" data-filter="fail">仅失败</button>
+          <button class="dock-tab" id="dock-fold" title="折叠已通过的指令">折叠已通过</button>
+          <input id="dock-search" class="dock-search" placeholder="搜索 (地址/值/文本)">
+          <button id="dock-export" title="导出本次运行为 Markdown">导出 MD</button>
+        </span>
+        <button id="dock-clear" title="清空本 case 的日志 / 图片">🗑 清空本 case ▾</button>
         <button id="dock-toggle" title="展开/收起">⌃</button>
       </div>
+      <div id="dock-tabs">
+        <button class="dtab on" data-dtab="log">运行日志</button>
+        <button class="dtab" data-dtab="img">图片 <i id="dtab-img-n">0</i></button>
+        <button class="dtab" data-dtab="hist">历史 <i id="dtab-hist-n">0</i></button>
+        <span class="dock-spacer"></span>
+        <span id="dock-case" class="dock-case">case: -</span>
+      </div>
       <div id="dock-body"></div>
+      <div id="dock-img" class="dock-pane hidden"></div>
+      <div id="dock-hist" class="dock-pane hidden"></div>
     </div>
   </div>
 
   <div id="inspector">
+    <div id="ins-resizer" title="拖动调整宽度 (双击复位)"></div>
     <div id="ins-tabs">
       <button class="tab active" data-tab="props">属性 / 调试</button>
       <button class="tab" data-tab="ai">🤖 AI 助手</button>
@@ -64,14 +88,13 @@
       <div id="ins-body" class="ins-empty">点击节点编辑参数</div>
     </div>
     <div id="tab-ai" class="hidden">
-      <div class="ai-intro"><b>用自然语言生成测试流程</b><span id="ai-config-status">正在检查 AI 配置…</span></div>
       <div class="field" style="margin-bottom:8px">
         <label>模型</label>
         <select id="ai-model"></select>
       </div>
       <div id="ai-history"><div class="ai-msg ai-sys">描述你想要的测试用例, 我来生成画布。<br>例如: "先上电, 读0x00d8断言主版本是4, 出图抓帧读FPS, 最后断电"</div></div>
-      <textarea id="ai-input" rows="4" placeholder="例如：上电后读取 0x00d8，断言主版本为 4，抓帧并检查 FPS，最后断电。 Ctrl+Enter 发送"></textarea>
-      <div class="ai-actions"><button id="ai-example" type="button">填入示例</button><button id="ai-send" class="primary">生成画布</button></div>
+      <textarea id="ai-input" rows="3" placeholder="描述想实现的用例… (Ctrl+Enter 发送)"></textarea>
+      <button id="ai-send" class="primary" style="width:100%">发送给 AI 生成画布</button>
     </div>
   </div>
 </div>
@@ -90,20 +113,60 @@
   <div id="gallery-caption"></div>
 </div>
 
+<!-- 项目配置 -->
+<div id="proj-overlay" class="hidden">
+  <div id="proj-box">
+    <div class="runlog-head"><b>⚙ 项目配置</b>
+      <button onclick="document.getElementById('proj-overlay').classList.add('hidden')">✕</button></div>
+    <div class="proj-body">
+      <div class="field"><label>默认 ini（新建 device.open 节点时继承它）</label>
+        <select id="proj-ini"></select></div>
+      <div class="field"><label>默认 Slave ID</label><input id="proj-slave" type="text" placeholder="0x40"></div>
+      <div class="field"><label>固件 · Release</label><select id="proj-fw-release"></select></div>
+      <div class="field"><label>固件 · Debug（没有就留空）</label><select id="proj-fw-debug"></select></div>
+      <div class="proj-hint">ini / 固件在这里绑一次就够了 —— 画布里所有节点默认继承；某个 case 要用别的，在节点上单独改。</div>
+      <div class="proj-split"></div>
+      <div class="proj-sub"><b>常用寄存器预设</b>
+        <button id="proj-preset-add" class="mini">＋ 新增</button>
+        <span class="dim" style="font-size:11px">（在 I²C 节点的行上点「存为预设」也能写回来）</span></div>
+      <div id="proj-preset-list" class="preset-list"></div>
+      <div class="proj-actions">
+        <button id="proj-save" class="primary">保存</button>
+        <span id="proj-msg" class="dim"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 运行历史 -->
+<div id="hist-overlay" class="hidden">
+  <div id="hist-box">
+    <div class="runlog-head"><b>🕘 运行历史</b>
+      <button onclick="document.getElementById('hist-overlay').classList.add('hidden')">✕</button></div>
+    <div id="hist-list"></div>
+  </div>
+</div>
+
 <div id="help-overlay" class="hidden">
   <div id="help-box">
     <div class="runlog-head"><b>操作与连线说明</b>
       <button onclick="document.getElementById('help-overlay').classList.add('hidden')">✕</button></div>
     <div class="help-body">
-      <p><b>添加节点</b>：左侧面板拖入画布（或双击面板项）；也可以在画布<b>空白处右键</b> → 选节点。</p>
-      <p><b>连线（两种方式）</b>：<br>
-        ① 拖线：按住端口圆点拖到目标端口松手（会自动吸附最近的兼容端口）；<br>
-        ② 点两下：先<b>点一下</b>起点端口（兼容端口会呼吸高亮），再<b>点一下</b>目标端口即完成。<br>
-        金色方块端口 = <b>执行流</b>（定执行顺序，上游→下游）；蓝色圆点端口 = <b>数据传值</b>（如 I2C 读到的值 → 断言的值）。金连金、蓝连蓝。</p>
-      <p><b>删连线</b>：点击连线本身。<b>删节点</b>：选中后按 Delete。</p>
-      <p><b>平移/缩放</b>：空白处按住拖动 = 平移；滚轮 = 以鼠标为中心缩放；右下角 ＋/－/⛶ 缩放与内容居中。</p>
-      <p><b>单步调试</b>：节点标题栏 ▶ 只运行该节点；选中节点后右侧还有专属调试动作（如继电器扫描串口、测试通道响应）。</p>
-      <p><b>跨画布复用</b>：选中节点 Ctrl+C 复制，切到其它画布 Ctrl+V 粘贴（每个画布是独立 case，画布之间不能直接连线）。</p>
+      <p><b>节点</b>：左侧「常用节点」8 个够用；低频的固件操作在底部「高级节点」。拖入画布或双击添加，空白处右键也能加。</p>
+      <p><b>连线</b>：只有<b>金色执行流</b>（决定执行顺序）。
+        ① 按住金色方块端口拖到目标节点；② 或先点一下起点端口，再点一下目标端口。
+        <b>蓝色数据连线已移除</b> —— 断言写在节点内部（如 I²C 行的「期待值」）。旧画布里残留的蓝线仍会保留执行。</p>
+      <p><b>删连线</b>：单击连线选中（高亮），按 Delete 删除 —— 不再点一下就删。
+         <b>删节点</b>：选中后按 Delete。<b>误操作 Ctrl+Z 撤销</b>。</p>
+      <p><b>参数编辑</b>：右侧属性面板。I²C 节点是<b>表格</b>，顶部统一 Slave ID，下面逐条指令，<b>每条指令各自指定类型（读 / 读并校验 / 写 / 写并回读校验）和位宽(a2d4 等)</b>，
+         「期待值」留空就不断言，填了就做回读值比对（⚙ 里还能设遮罩与右移）；每行都能拖拽排序、存为常用寄存器预设。
+         Device 出图检查是<b>操作列表</b>：只拖左侧 ⠿ 换顺序，参数跟在操作后面一行。</p>
+      <p><b>伸缩布局</b>：下方运行台的<b>上边缘</b>可上下拖拽调整高度，右侧属性台的<b>左边缘</b>可左右拖拽调整宽度（双击边缘复位，尺寸会记住）。</p>
+      <p><b>本 case 独立空间</b>：一个画布 = 一个 case。下方运行台分三栏 —— <b>运行日志 / 图片 / 历史</b>，都是这个 case 自己的产物，放在 <code>logs/cases/&lt;case&gt;/</code>。
+         「🗑 清空本 case ▾」可一键清掉它的日志、图片或全部，不影响别的 case。</p>
+      <p><b>调试</b>：选中节点后点「⤵ 运行到此」—— 会把它依赖的上游节点先跑一遍再停在这里，设备保持上电/已配置状态。</p>
+      <p><b>平移/缩放</b>：空白处拖动 = 平移；滚轮 = 以鼠标为中心缩放；右下角 ＋/－/⛶。</p>
+      <p><b>自动保存</b>：改动后 1.5 秒自动落盘，顶栏 ● 表示尚未保存到最后一次操作。</p>
     </div>
   </div>
 </div>

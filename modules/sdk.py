@@ -11,6 +11,7 @@
 其余四个功能模块 (relay/device/i2c/firmware) 都基于本模块拿到的 DLL 句柄工作。
 """
 import ctypes
+import json
 import os
 from ctypes import (
     WINFUNCTYPE,
@@ -38,11 +39,24 @@ _DEFAULT_BIN_DIR = _PROJECT_ROOT / "bin"
 
 # testlib.dll 除 Qt6/Dothinkey 外还依赖完整 PixelIDE 部署中的 device.dll /
 # imageviewer.dll, 仅靠 bin/ 下 8 个基础 DLL 无法解析 -> 优先从完整部署加载。
-# 常见部署位置按序探测, 也可在 config.json 中显式指定 (paths.pixelide_dir)。
+# 常见部署位置按序探测, 也可在 config.json 的 paths.pixelide_dir 中显式指定。
 _KNOWN_PIXELIDE_DIRS = [
-    Path(r"D:\PixelIde\pixelide_release\PixelIDE"),          # 旧工程 config 默认
-    Path(r"F:\Duxin\IDE_resently\pixelide_release\PixelIDE"),  # 本机完整部署
+    Path(r"F:\Duxin\IDE_resently\pixelide_release\PixelIDE"),   # 本机完整部署
+    Path(r"D:\IDE_resently\pixelide_release\PixelIDE"),          # 本机完整部署 (D 盘)
+    Path(r"D:\ide - 9-10\PixelIDE_20260910_POWERTEST(1)"
+         r"\PixelIDE_20260910_POWERTEST"),                        # 2026-09-10 发布包
+    Path(r"D:\PixelIde\pixelide_release\PixelIDE"),               # 旧工程 config 默认
 ]
+
+
+def _configured_pixelide_dir() -> str | None:
+    """读取 config.json 的 paths.pixelide_dir (未配置或读取失败返回 None)"""
+    try:
+        with open(_PROJECT_ROOT / "config.json", "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return cfg.get("paths", {}).get("pixelide_dir") or None
 
 
 def _resolve_dll(name: str, bin_dir=None, pixelide_dir=None) -> Path:
@@ -259,7 +273,7 @@ class PixelIDESdk:
         )
 
         # --- 继电器 (串口通道切换器) ---
-        dll.get_switcher.argtypes = [c_char_p]                  # "COM3"
+        dll.get_switcher.argtypes = [c_char_p]                  # "COM9"
         dll.get_switcher.restype = c_void_p
 
         dll.switcher_open.argtypes = [c_void_p]
@@ -408,11 +422,16 @@ class PixelIDESdk:
 _sdk_instance = None
 
 
-def get_sdk(bin_dir=None) -> PixelIDESdk:
-    """获取全局 PixelIDESdk 单例 (首次调用时加载 DLL 并 init_qt)"""
+def get_sdk(bin_dir=None, pixelide_dir=None) -> PixelIDESdk:
+    """获取全局 PixelIDESdk 单例 (首次调用时加载 DLL 并 init_qt)
+
+    pixelide_dir 未显式传入时读 config.json 的 paths.pixelide_dir。
+    """
     global _sdk_instance
     if _sdk_instance is None:
-        _sdk_instance = PixelIDESdk(bin_dir=bin_dir)
+        _sdk_instance = PixelIDESdk(
+            bin_dir=bin_dir, pixelide_dir=pixelide_dir or _configured_pixelide_dir()
+        )
     return _sdk_instance
 
 

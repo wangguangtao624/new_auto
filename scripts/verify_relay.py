@@ -2,7 +2,7 @@
 """验证 1: 继电器模块 (modules.relay)
 
 步骤:
-  1. 在 COM3 上创建继电器句柄
+  1. 在 config.json 指定的串口 (当前 COM9) 上创建继电器句柄
   2. switcher_open / switcher_close 各一次
   3. 对 Channel 0 执行 导通 -> 断开 -> 再导通 (保持模组供电)
 退出码 0 = 全部通过。
@@ -13,7 +13,7 @@ import time
 from common import ROOT, load_config
 
 from modules.log_setup import setup_logging
-from modules.relay import list_com_ports, relay_from_config
+from modules.relay import RelayController, list_com_ports
 
 
 def main():
@@ -25,7 +25,7 @@ def main():
     print(f"本机串口: {list_com_ports()}")
     print(f"目标继电器: {relay_cfg['port']} 通道 {ch}")
 
-    relay = relay_from_config(config)
+    relay = RelayController(relay_cfg["port"])
     results = {}
 
     results["open"] = relay.open()

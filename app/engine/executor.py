@@ -78,11 +78,31 @@ def topo_sort(nodes, edges):
     return order, by_id, adj
 
 
-def run_canvas(canvas: dict, config_path=None, stop_on_fail=None, on_event=None):
+def ancestors(node_id, edges):
+    """某节点的全部上游祖先 (含自身), 用于「运行到此节点」"""
+    rev = {}
+    for e in edges:
+        rev.setdefault(e["to"], set()).add(e["from"])
+    seen, stack = {node_id}, [node_id]
+    while stack:
+        cur = stack.pop()
+        for up in rev.get(cur, ()):
+            if up not in seen:
+                seen.add(up); stack.append(up)
+    return seen
+
+
+def run_canvas(canvas: dict, config_path=None, stop_on_fail=None, on_event=None,
+               session=None, close_session=True, until=None, case_name=None):
     """执行一个画布
 
     :param on_event: 实时事件回调 fn(dict); 事件形如
-        {"event":"start","id":...} / {"event":"finish","entry":{...}} / {"event":"done"}
+        {"event":"start","id":...} / {"event":"log",...} / {"event":"progress",...}
+        / {"event":"finish","entry":{...}} / {"event":"done"}
+    :param session: 复用的硬件会话 (单步调试/运行到此节点时传入); 不传则新建
+    :param close_session: 结束后是否释放会话 (复用会话时必须为 False)
+    :param until: 只执行到该节点(含)为止, 连同其上游依赖链
+    :param case_name: 产物(日志/图片)归属的 case 名; 默认取画布名
     :return: 运行报告 dict
     """
     nodes = canvas.get("nodes", [])
@@ -93,6 +113,11 @@ def run_canvas(canvas: dict, config_path=None, stop_on_fail=None, on_event=None)
         stop_on_fail = canvas.get("stop_on_fail", True)
 
     order, by_id, adj = topo_sort(nodes, edges)
+    if until:
+        keep = ancestors(until, edges)
+        order = [i for i in order if i in keep]
+        if not order:
+            raise CanvasError(f"未找到节点 {until}")
 
     # 上游输出 -> (节点, 参数) 的连线索引 (执行流连线 "__" 前缀只定序, 不传数据)
     incoming = {}
@@ -101,15 +126,24 @@ def run_canvas(canvas: dict, config_path=None, stop_on_fail=None, on_event=None)
             continue
         incoming.setdefault(e["to"], {})[e["toParam"]] = (e["from"], e["fromPort"])
 
-    ctx = Session(config_path)
+    ctx = session or Session(config_path)
+    # 绑定 case: 抓帧图片 / 日志落进 logs/cases/<case>/, 与其它用例完全隔离
+    try:
+        ctx.set_case(case_name or canvas.get("name"))
+    except AttributeError:
+        logger.warning("当前 Session 不支持 set_case —— 产物会落到默认目录")
+    except Exception:
+        logger.exception("绑定 case 失败(忽略)")
     report = {"ok": True, "name": canvas.get("name", "unnamed"),
-              "nodes": [], "log": [],
+              "nodes": [], "log": [], "events": [],
               "started": time.strftime("%Y-%m-%d %H:%M:%S"),
               "stop_on_fail": stop_on_fail}
     outputs_by_node = {}
     aborted = False
 
     def emit(ev):
+        if ev.get("event") in ("log", "progress"):
+            report["events"].append(ev)
         if on_event:
             try:
                 on_event(ev)
@@ -138,6 +172,8 @@ def run_canvas(canvas: dict, config_path=None, stop_on_fail=None, on_event=None)
                 inputs[param] = outputs_by_node.get(src, {}).get(port)
 
             emit({"event": "start", "id": nid, "title": entry["title"]})
+            # 节点内的 ctx.emit 事件透传给 on_event (带上节点ID/序号)
+            ctx.set_emitter(emit, nid)
             t0 = time.time()
             try:
                 fut = _POOL.submit(spec["run"], ctx, node.get("params", {}), inputs)
@@ -160,10 +196,12 @@ def run_canvas(canvas: dict, config_path=None, stop_on_fail=None, on_event=None)
             entry["ms"] = int((time.time() - t0) * 1000)
             emit({"event": "finish", "entry": entry})
     finally:
-        try:
-            ctx.close()
-        except Exception:
-            logger.exception("会话收尾异常(忽略)")
+        if close_session:
+            ctx.set_emitter(None)
+            try:
+                ctx.close()
+            except Exception:
+                logger.exception("会话收尾异常(忽略)")
 
     if aborted or any(n["status"] == "failed" for n in report["nodes"]):
         report["ok"] = False

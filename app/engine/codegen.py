@@ -12,6 +12,10 @@ from .registry import NODES
 APP_DIR = Path(__file__).resolve().parent.parent
 CASES_DIR = APP_DIR / "cases"
 
+# v2 收敛节点: 生成脚本时直接委托 run(), 不重复实现一遍逻辑
+_DELEGATED_TYPES = {"power.ctrl", "device.open", "device.check", "device.close",
+                    "i2c.seq", "fw.download"}
+
 # 参数名 -> 合法 python 变量名
 def _safe(s):
     return re.sub(r"\W", "_", str(s))
@@ -42,10 +46,13 @@ def generate(canvas: dict) -> Path:
         "sys.path.insert(0, str(ROOT))",
         "",
         "from app.engine.session import Session",
+        "from app.engine.registry import get_node as _gn",
         "",
         "",
         "def main():",
         "    ctx = Session()",
+        # 绑 case: 抓帧/日志落进 logs/cases/<case>/, 与画布执行一致
+        f"    ctx.set_case({canvas.get('name', name)!r})",
     ]
 
     var_of = {}  # node id -> 输出变量名字典
@@ -186,22 +193,27 @@ def generate(canvas: dict) -> Path:
             lines.append("        if not _line: continue")
             lines.append("        _p = _line.split()")
             lines.append("        _op = _p[0].lower()")
-            lines.append("        _m = _I_MODE[_p[2]] if len(_p) > 2 else _m_def")
             lines.append("        if _op == 'read':")
+            # 各指令字段位不同: read(addr,mode) / write|verify(addr,val,mode)
+            # / expect(addr,expected,mask,shift,mode)
+            lines.append("            _m = _I_MODE[_p[2]] if len(_p) > 2 else _m_def")
             lines.append("            _ok, _v = _i2c.read(int(_p[1],16), slave=_slave, addr_len=_m[0], bits=_m[1])")
             lines.append("            assert _ok, f'读失败 {_line}'")
             lines.append("            print(f'  [read] 0x{int(_p[1],16):04x} = 0x{_v:x}')")
             lines.append("        elif _op == 'write':")
+            lines.append("            _m = _I_MODE[_p[3]] if len(_p) > 3 else _m_def")
             lines.append("            _a, _val = int(_p[1],16), int(_p[2],16)")
             lines.append("            assert _i2c.write(_a, _val, slave=_slave, addr_len=_m[0], bits=_m[1]), f'写失败 {_line}'")
             lines.append("            print(f'  [write] 0x{_a:04x} = 0x{_val:x}')")
             lines.append("        elif _op == 'verify':")
+            lines.append("            _m = _I_MODE[_p[3]] if len(_p) > 3 else _m_def")
             lines.append("            _a, _val = int(_p[1],16), int(_p[2],16)")
             lines.append("            assert _i2c.write(_a, _val, slave=_slave, addr_len=_m[0], bits=_m[1]), f'写失败 {_line}'")
             lines.append("            _ok, _rb = _i2c.read(_a, slave=_slave, addr_len=_m[0], bits=_m[1])")
             lines.append("            assert _ok and _rb == _val, f'回读不一致: 写 0x{_val:x} 读 0x{_rb:x}'")
             lines.append("            print(f'  [verify] 0x{_a:04x} = 0x{_rb:x} 校验通过')")
             lines.append("        elif _op == 'expect':")
+            lines.append("            _m = _I_MODE[_p[5]] if len(_p) > 5 else _m_def")
             lines.append("            _a, _exp = int(_p[1],16), int(_p[2],16)")
             lines.append("            _mask = int(_p[3],16) if len(_p) > 3 else 0xFFFFFFFF")
             lines.append("            _sh = int(_p[4],0) if len(_p) > 4 else 0")
@@ -266,17 +278,6 @@ def generate(canvas: dict) -> Path:
                          f"settle_seconds={pv('settle_seconds', 2)})")
             lines.append(f"    assert {var}_r.get('pass'), f\"寄存器未生效: {{ {var}_r }}\"")
             lines.append(f"    print('[{ntype}]', {var}_r)")
-        elif ntype == "fw.download":
-            ini = params.get("ini")
-            binp = params.get("bin")
-            ini_expr = (f"str(ROOT / 'configs' / 'init_file' / {ini!r})"
-                        if ini else "ctx.default_ini()")
-            bin_expr = (f"str(ROOT / 'fw' / {binp!r})"
-                        if binp else "str(sorted((ROOT / 'fw').glob('*.bin'))[0])")
-            lines.append(f"    ctx.ensure_powered()")
-            lines.append(f"    assert ctx.fw_downloader().download({ini_expr}, {bin_expr}, "
-                         f"max_retries={pv('retries', 3)}), '固件下载失败'")
-            lines.append("    ctx.power_off(); import time; time.sleep(15); ctx.ensure_powered()")
         elif ntype == "fw.soc_reboot":
             lines.append("    from modules.firmware import FirmwareFlasher")
             lines.append("    assert FirmwareFlasher(ctx.ensure_configured()).soc_reboot(), 'soc_reboot 失败'")
@@ -328,6 +329,12 @@ def generate(canvas: dict) -> Path:
             lines.append(f"    assert _actual {params.get('op', '==')} {pv('expected', '0x1')}, "
                          f"f'断言失败: {{_actual:#x}} {params.get('op', '==')} {params.get('expected', '0x1')}'")
             lines.append(f"    print('[{ntype}] actual =', hex(_actual))")
+        # 收敛后的 v2 节点: 直接委托给注册表里的 run(),
+        # 保证「画布执行」与「生成的用例脚本」语义完全一致 (含表格/操作列表参数)
+        elif ntype in _DELEGATED_TYPES:
+            lines.append("    _outs = _gn(%r)['run'](ctx, %r, {}) or {}" % (ntype, params))
+            lines.append("    print(%r, {k: v for k, v in _outs.items() if k != 'ok'})"
+                         % f"[{ntype}] ok")
         else:
             lines.append(f"    raise RuntimeError('未支持的节点类型: {ntype}')")
         lines.append("")

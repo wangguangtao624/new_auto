@@ -2,7 +2,7 @@
 """验证 2: 外部设备模块 (modules.device)
 
 步骤:
-  1. 继电器上电 (COM3 / CH0, 依赖验证 1)
+  1. 继电器上电 (COM9 / CH0, 依赖验证 1)
   2. get_device("MAT130YV200") 取句柄
   3. 读取并回设 Dothinkey 聚焦通道
   4. device_setConfigure 下发 96712 ini
@@ -19,7 +19,7 @@ from common import ROOT, load_config
 
 from modules.device import PixelDevice
 from modules.log_setup import setup_logging
-from modules.relay import relay_from_config
+from modules.relay import RelayController
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
     relay_cfg, dev_cfg = config["relay"], config["device"]
 
     # 1. 上电
-    relay = relay_from_config(config)
+    relay = RelayController(relay_cfg["port"])
     relay.open()
     if not relay.open_channel(relay_cfg["channel"]):
         print("FAIL: 继电器通道导通失败")

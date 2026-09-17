@@ -33,6 +33,18 @@ from .i2c import I2CController
 
 logger = logging.getLogger("new_auto.image")
 
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def default_img_dir() -> str:
+    """未绑定 case 时的兜底图片目录 (config.json: app.img_output)"""
+    try:
+        import json
+        cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+        return str(ROOT / cfg.get("app", {}).get("img_output", "logs/img"))
+    except Exception:
+        return str(ROOT / "logs" / "img")
+
 
 class ImageTools:
     """抓帧 + 亮度分析 + 前后对比"""

@@ -1,0 +1,152 @@
+{
+  "name": "示例_上电读版本出图",
+  "stop_on_fail": true,
+  "nodes": [
+    {
+      "id": "n1",
+      "type": "power.ctrl",
+      "x": 60,
+      "y": 40,
+      "params": {
+        "action": "on",
+        "channel": 0,
+        "port": "",
+        "off_seconds": 15,
+        "wait_after_on": 8
+      }
+    },
+    {
+      "id": "n2",
+      "type": "device.open",
+      "x": 60,
+      "y": 170,
+      "params": {
+        "ini": "",
+        "auto_power": true
+      }
+    },
+    {
+      "id": "n3",
+      "type": "i2c.seq",
+      "x": 60,
+      "y": 300,
+      "params": {
+        "slave": "0x40",
+        "mode": "A2D4",
+        "ops": [
+          {
+            "op": "read",
+            "addr": "0x00d8",
+            "mode": "A2D4",
+            "value": "",
+            "expect": "0x04",
+            "mask": "0x00FF0000",
+            "shift": 16,
+            "slave": ""
+          },
+          {
+            "op": "read",
+            "addr": "0x00c0",
+            "mode": "A2D4",
+            "value": "",
+            "expect": "",
+            "mask": "0xFFFFFFFF",
+            "shift": 0,
+            "slave": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "n4",
+      "type": "device.check",
+      "x": 60,
+      "y": 470,
+      "params": {
+        "ini": "",
+        "ops": [
+          {
+            "op": "open_video"
+          },
+          {
+            "op": "capture",
+            "name": "demo"
+          },
+          {
+            "op": "fps",
+            "min": "25"
+          },
+          {
+            "op": "dn",
+            "min": "20",
+            "max": "120"
+          }
+        ]
+      }
+    },
+    {
+      "id": "n5",
+      "type": "device.close",
+      "x": 60,
+      "y": 640,
+      "params": {
+        "power_off": false
+      }
+    },
+    {
+      "id": "n6",
+      "type": "power.ctrl",
+      "x": 60,
+      "y": 760,
+      "params": {
+        "action": "off",
+        "channel": 0,
+        "port": "",
+        "off_seconds": 15,
+        "wait_after_on": 8
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "n1",
+      "fromPort": "__out",
+      "to": "n2",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n2",
+      "fromPort": "__out",
+      "to": "n3",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n3",
+      "fromPort": "__out",
+      "to": "n4",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n4",
+      "fromPort": "__out",
+      "to": "n5",
+      "toParam": "__in",
+      "kind": "flow"
+    },
+    {
+      "from": "n5",
+      "fromPort": "__out",
+      "to": "n6",
+      "toParam": "__in",
+      "kind": "flow"
+    }
+  ],
+  "view": {
+    "x": 513,
+    "y": 54,
+    "z": 0.932
+  }
+}

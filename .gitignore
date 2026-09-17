@@ -14,3 +14,4 @@ bin/*.dll
 
 # AI Agent key (不入 git)
 app/agent_key.local
+.superpowers/
