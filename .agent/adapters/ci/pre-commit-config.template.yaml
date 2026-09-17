@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: protocol-lint
+        name: Protocol Lint
+        entry: python .agent/scripts/lint-protocol.py
+        language: system
+        pass_filenames: false
+        files: ^\.agent/

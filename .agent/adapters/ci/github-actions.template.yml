@@ -1,0 +1,28 @@
+name: Protocol Check
+
+on:
+  push:
+    paths:
+      - '.agent/**'
+  pull_request:
+    paths:
+      - '.agent/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Protocol Lint
+        run: |
+          python .agent/scripts/lint-protocol.py
+      
+      - name: Token Count
+        run: |
+          python .agent/scripts/token-counter.py

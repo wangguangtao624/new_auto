@@ -1,0 +1,7 @@
+# PR verify-change gate (copy into .github/workflows/ or reuse in CI)
+
+- name: Verify active SDD change
+  working-directory: cokodo-agent
+  run: |
+    pip install -e ".[dev]"
+    python -m cokodo_agent verify-change .. --skip-checks

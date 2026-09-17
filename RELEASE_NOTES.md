@@ -1,4 +1,4 @@
-# New Auto 2.0.0
+# New Auto 2.2.0
 
 ## Highlights
 

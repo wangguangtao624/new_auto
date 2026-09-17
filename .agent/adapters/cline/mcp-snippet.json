@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "cokodo-agent": {
+      "command": "co",
+      "args": [
+        "serve",
+        "--shared-launcher",
+        "."
+      ],
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}

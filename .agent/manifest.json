@@ -1,0 +1,424 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "name": "agent-protocol",
+  "version": "3.3.1",
+  "description": "AI Agent Collaboration Protocol - Standardized Digital Asset",
+  "directory_name": ".agent",
+  "directory_name_comment": "Protocol directory name, documents use $AGENT_DIR placeholder",
+  "loading_strategy": {
+    "layers": {
+      "essential": {
+        "description": "Core required files, must load every session",
+        "load": "always",
+        "token_budget": 3000,
+        "files": [
+          "project/status.md",
+          "start-here.md",
+          "core/core-rules.md"
+        ]
+      },
+      "context": {
+        "description": "Project context, load at session start",
+        "load": "session_start",
+        "token_budget": 2000,
+        "files": [
+          "core/instructions.md",
+          "project/context.md",
+          "project/tech-stack.md",
+          "project/known-issues.md",
+          "project/deploy.md",
+          "project/commands.md"
+        ]
+      },
+      "stack_specs": {
+        "description": "Tech stack specs, load based on project stack",
+        "load": "on_demand",
+        "selector": "project.primary_stack",
+        "options": {
+          "python": [
+            "core/stack-specs/python.md"
+          ],
+          "rust": [
+            "core/stack-specs/rust.md"
+          ],
+          "qt": [
+            "core/stack-specs/qt.md"
+          ],
+          "mixed": [
+            "core/stack-specs/python.md",
+            "core/stack-specs/rust.md"
+          ]
+        }
+      },
+      "workflows": {
+        "description": "Workflow specs, load by task type",
+        "load": "on_demand",
+        "trigger": "task_type",
+        "mappings": {
+          "coding": [
+            "core/workflows/bug-prevention.md",
+            "core/workflows/design-principles.md",
+            "core/workflows/adr-guide.md"
+          ],
+          "testing": [
+            "core/workflows/testing.md"
+          ],
+          "documentation": [
+            "core/workflows/documentation.md"
+          ],
+          "review": [
+            "core/workflows/review-process.md",
+            "core/workflows/quality-assurance.md",
+            "project/sop/code-review.md"
+          ],
+          "design_review": [
+            "core/workflows/design-principles.md",
+            "core/workflows/review-process.md"
+          ],
+          "planning": [
+            "core/workflows/pre-task-checklist.md",
+            "core/workflows/ai-boundaries.md",
+            "core/workflows/token-budget.md"
+          ],
+          "ui": [
+            "core/workflows/ui-design-workflow.md"
+          ],
+          "research": [
+            "core/workflows/research-workflow.md"
+          ],
+          "versioning": [
+            "core/workflows/version-governance-workflow.md",
+            "project/versioning.md",
+            "project/version-state.toml",
+            "project/sop/release.md"
+          ],
+          "release_docs": [
+            "core/workflows/release-doc-refresh-workflow.md",
+            "core/workflows/version-governance-workflow.md",
+            "project/sop/release-doc-refresh.md",
+            "project/versioning.md",
+            "project/version-state.toml"
+          ],
+          "docker": [
+            "core/workflows/docker-build-optimization.md"
+          ],
+          "policy": [
+            "core/workflows/policy-as-code.md"
+          ],
+          "git": [
+            "project/AGENT-GIT-PR-WORKFLOW.md",
+            "project/sop/agent-git-pr-collaboration.md",
+            "project/sop/git-workflow.md"
+          ]
+        }
+      },
+      "skills": {
+        "description": "Skill modules, load on demand",
+        "load": "on_demand",
+        "trigger": "skill_request",
+        "modules": {
+          "interface": {
+            "entry": "skills/skill-interface.md",
+            "description": "Skill development interface spec"
+          },
+          "guardian": {
+            "entry": "skills/guardian/SKILL.md",
+            "description": "Code/doc quality check"
+          },
+          "ai-integration": {
+            "entry": "skills/ai-integration/llm-client.md",
+            "files": [
+              "skills/ai-integration/llm-client.md",
+              "skills/ai-integration/prompt-engineering.md",
+              "skills/ai-integration/domain-adaptation.md"
+            ],
+            "description": "AI/LLM integration development"
+          },
+          "agent-governance": {
+            "entry": "skills/agent-governance/SKILL.md",
+            "description": "Protocol health check"
+          }
+        }
+      },
+      "reference": {
+        "description": "Reference docs, load when consulting",
+        "load": "on_demand",
+        "files": [
+          "core/conventions.md",
+          "core/stack-specs/git.md",
+          "core/security.md",
+          "core/examples.md",
+          "meta/protocol-adr.md",
+          "project/conventions.md"
+        ]
+      }
+    },
+    "task_profiles": {
+      "code_review": {
+        "description": "Code review task",
+        "layers": [
+          "essential",
+          "context",
+          "stack_specs"
+        ],
+        "workflows": [
+          "review"
+        ],
+        "skills": [
+          "guardian"
+        ]
+      },
+      "design_review": {
+        "description": "Design / architecture / requirements review task",
+        "layers": [
+          "essential",
+          "context"
+        ],
+        "workflows": [
+          "design_review"
+        ],
+        "skills": []
+      },
+      "feature_development": {
+        "description": "Feature development task",
+        "layers": [
+          "essential",
+          "context",
+          "stack_specs"
+        ],
+        "workflows": [
+          "coding",
+          "testing"
+        ],
+        "skills": []
+      },
+      "bug_fix": {
+        "description": "Bug fix task",
+        "layers": [
+          "essential",
+          "context",
+          "stack_specs"
+        ],
+        "workflows": [
+          "coding"
+        ],
+        "skills": [
+          "guardian"
+        ]
+      },
+      "documentation": {
+        "description": "Documentation task",
+        "layers": [
+          "essential",
+          "context"
+        ],
+        "workflows": [
+          "documentation"
+        ],
+        "skills": []
+      },
+      "ai_integration": {
+        "description": "AI integration development task",
+        "layers": [
+          "essential",
+          "context",
+          "stack_specs"
+        ],
+        "workflows": [
+          "coding",
+          "testing"
+        ],
+        "skills": [
+          "ai-integration"
+        ]
+      },
+      "research": {
+        "description": "Research task (industry/market survey, technology comparison, feasibility)",
+        "layers": [
+          "essential",
+          "context"
+        ],
+        "workflows": [
+          "research"
+        ],
+        "skills": []
+      },
+      "release": {
+        "description": "Release / version governance task",
+        "layers": [
+          "essential",
+          "context"
+        ],
+        "workflows": [
+          "versioning"
+        ],
+        "skills": []
+      },
+      "versioning": {
+        "description": "Version policy / state / release governance task",
+        "layers": [
+          "essential",
+          "context"
+        ],
+        "workflows": [
+          "versioning"
+        ],
+        "skills": []
+      }
+    }
+  },
+  "required_files": [
+    "start-here.md",
+    "index.md",
+    "core/core-rules.md",
+    "core/instructions.md",
+    "core/conventions.md",
+    "project/status.md",
+    "project/context.md",
+    "project/tech-stack.md",
+    "project/deploy.md",
+    "meta/protocol-adr.md"
+  ],
+  "naming_conventions": {
+    "markdown_files": "^[a-z0-9]+(-[a-z0-9]+)*\\.md$",
+    "directories": "^[a-z0-9]+(-[a-z0-9]+)*$",
+    "exceptions": [
+      "MANIFEST.json",
+      "VERSION",
+      "SKILL.md"
+    ]
+  },
+  "compatibility": {
+    "min_version": "3.0.0",
+    "breaking_changes": [
+      {
+        "version": "2.0.0",
+        "description": "Protocol unified merge, directory structure changed"
+      }
+    ],
+    "minor_changes": [
+      {
+        "version": "3.3.0",
+        "description": "Policy-as-code workflow and bundled OPA/Conftest policies (release.rego, release_note.rego); pre-commit policy hook template; design_review workflow surfaced; project SOP code-review.md template promoted to required SOP"
+      },
+      {
+        "version": "3.2.9",
+        "description": "Registered MCP template tools `list_templates` and `get_template` for bundled protocol and CI adapter template discovery"
+      },
+      {
+        "version": "3.2.8",
+        "description": "Added version-governance CI/CD and release-automation examples to project templates, CI adapter guidance, and usage docs"
+      },
+      {
+        "version": "3.2.7",
+        "description": "Added `co cut-release` helper to finalize released track state after canonical-source and release checks"
+      },
+      {
+        "version": "3.2.6",
+        "description": "Added `co prepare-release` helper for explicit release-freeze state transition before cut-release"
+      },
+      {
+        "version": "3.2.5",
+        "description": "Added `co start-next-version` helper for explicit next-iteration state transition and release-note draft initialization"
+      },
+      {
+        "version": "3.2.4",
+        "description": "Generic version-state checker/lint rule for structured version governance: schema, track state, canonical source, release note, tag, and rollback validation"
+      },
+      {
+        "version": "3.2.3",
+        "description": "Version governance workflow and release/versioning task profiles: version-governance-workflow.md, version-state template, track-based release SOP"
+      },
+      {
+        "version": "3.2.2",
+        "description": "Research workflow and task profile: research-workflow.md, citation record and credibility assessment; start-here and MCP task=research"
+      },
+      {
+        "version": "3.2.1",
+        "description": "SDD active change in session init: instructions.md and start-here; status template placeholder; IDE adapters mention tasks.md when Active change (SDD) set"
+      },
+      {
+        "version": "3.2.0",
+        "description": "Added project/status.md for session continuity; status.md in essential loading layer; session maintenance rule in instructions.md; ADR 008"
+      },
+      {
+        "version": "3.1.0",
+        "description": "Added deploy.md, conventions.md templates; ADR guide workflow; skill parameterization; token budget guide"
+      }
+    ],
+    "patch_changes": [
+      {
+        "version": "3.1.1",
+        "description": "Scope clarity (UTF-8/emoji apply to entire project); no-emoji in core; protocol self-check prompt in meta/; ADR 005 (UTF-8 consolidation), ADR 006 (scope and emoji audit)"
+      }
+    ]
+  },
+  "metadata": {
+    "created": "2026-01-23",
+    "updated": "2026-04-22",
+    "maintainer": "AI Agent Protocol Team"
+  },
+  "checksums": {
+    "adapters/ci/github-actions.template.yml": "14ecdff7a1c4a42e1eae7a046888fe5353e5dfb08f5ce3ce49486ffa055e35ee",
+    "adapters/ci/pre-commit-config.template.yaml": "1bed8c56f7710762a7b41bff19e9a8f5f5c930624bfa60a74fb8341ea03854d5",
+    "adapters/ci/qg0-version-drift.template.yml": "0b3d601318026ba10a6b8ca68c38de4bdb462d3a01dffdeae7dca917dfe4c7c9",
+    "adapters/ci/readme.md": "fe77bf2f3024b5969b817f5efac8abd70c0df565042605dfb1b5c19868a69af1",
+    "adapters/ci/verify-change-pr.template.yml": "921530d2a0cf6c168b7101e3ed4a3c79dc8872b8ed9bb0af3b7bedc98356d929",
+    "adapters/claude/adapt_for_claude.py": "065975f4f6a705a82c50f7768f2113773494ade821762ca35d66dacb15d02a17",
+    "adapters/claude/instructions.template.md": "ce90c3a9226a1b03363ab8637636fbdeefb97e708efa068a2b2522d9ca6a25c1",
+    "adapters/cline/00-agent-protocol.template.md": "a2dd063907891652baf3934c7246b3fbb8ce2df9b911a55e0bd56fa374b4717b",
+    "adapters/cline/README.md": "fe7d6456cb8af592e847a28b67fcc0e9f7707a93cf5a286793a3bf5493f07d7a",
+    "adapters/cline/mcp-snippet.json": "c927afb762059c9f78d97aae88cc4f22851393025eff2978466feecacb55f701",
+    "adapters/cline/mcp-snippet.template.json": "2d326e54078ebedc44edd588c728df163d0b5a5ac2eec57bb16b1dcc9b26284e",
+    "adapters/cline/readme.template.md": "f111abd6d8b8906762a3a0b66447000acd234e66a479fe5575114a0b00c08d27",
+    "adapters/cline/release-governance.template.md": "d8c228dff1e1d2d396196a2e099b6cbef602fecd19c9d8fac809c8fc76a563dd",
+    "adapters/cline/ui-workflows.template.md": "2d88ca7b378137113703d7e514db5a7e6fdb04d0e744dc5cdc1e68a2f4a635d9",
+    "adapters/cursor/rules.template.md": "295c179c8711fb17ce463bdff8efaf9e4a48d933e27525f521ebff5a85b5e98b",
+    "adapters/github-copilot/instructions.template.md": "a76589b945ebfa09cc947a8ca1a8fb8dba32e7a7e90242f8d31c85d9d30ffec3",
+    "adapters/google-antigravity/adapt_for_antigravity.py": "07d5c3366cfb47842d36de76eb5dc782d162d1edb08e53134c32df3022bc158e",
+    "adapters/google-antigravity/instructions.template.md": "5deda79fd707bbad25eca98f1ab928aa38946b4114db9800894d5a82c492e7eb",
+    "core/conventions.md": "e2bd1de9251ca911dfb87b4e9ff4b5f01163a16b0b0d872bfc53687327e106c6",
+    "core/core-rules.md": "263f1bb6719b17c4c34e1d1e8a21c343578c91707b99ef1e3ba715f859fd9671",
+    "core/examples.md": "cc91e50736d2dd9b495ab31fdbcd7c80e18cd37b5c27022aaa966f8997ad73a3",
+    "core/instructions.md": "0baea0b3326e1c1dfc887d12135013a5b4e55c4436b19d4a812bc002e16137e2",
+    "core/protocol-map.md": "85a58e6c1b979cafaa4c45883ad89dfd46cea0b900d37e3587afa4a5ec05293b",
+    "core/security.md": "966ea5e0915b0869471c4d93eb2964b9f58bfb24339682b24e15c0a2063920e0",
+    "core/stack-specs/git.md": "51ad1bcbb32be4c2bb8b849be9f8382db59429dbaae705f165468ed9545a06ad",
+    "core/stack-specs/python.md": "924e99e98a59e25174641d3193a338662924f32b6a8259d6d96f1f6ee28f2bd6",
+    "core/stack-specs/qt.md": "4e064c96bf267a9607fe101f3e385c02a1d635b9ecac045c8bc4745e1516ed78",
+    "core/stack-specs/rust.md": "3b4ae99c8c7e02f3a30877f368409fcc38d871d1787343553c24a307062ea2b8",
+    "core/stack-specs/typescript.md": "c78adf4d57c90385eb6dee96f900b39a42d89fb62486e7c8ad3b5d2f1b9e8211",
+    "core/workflows/adr-guide.md": "9055513e22efc0ad78b4160a12b52ad2156ba371da0f38fcb6b6dbc5f670f806",
+    "core/workflows/ai-boundaries.md": "77eef95b252bb0c0502f027a91944cac4cdc7dbde8aa47a9468d00363adb081b",
+    "core/workflows/bug-prevention.md": "1867bc05216d2ded02e65124c66d63e15d4df801b21aafe9d9f0b73df946200f",
+    "core/workflows/design-principles.md": "59e6f667ac0efc49347e0bbc24b835d30b99245277d3c6d305921c66f2d54dfd",
+    "core/workflows/docker-build-optimization.md": "dcb45003bd78a4877684b05481bfe297ceec12c0c7bb2dccda83f616dbc67f05",
+    "core/workflows/documentation.md": "e85339f0a03477c0c76eaf2354686da1961c25dad3e3232e4d398b422196512a",
+    "core/workflows/nodejs-cli-file-logger.md": "074b10e3b591cd8563f3cc234e9dda727d50055f3bcb4cac1d85940940f59614",
+    "core/workflows/policy-as-code.md": "91519c8d40ce203e6808d391c54a1210c34a084619b3adcc4b63fd20c27b1cd4",
+    "core/workflows/pre-task-checklist.md": "f6268e0a2cdec92bbfbcdeff9ea48f1a155ab5d7f649dd581d523aa010be9348",
+    "core/workflows/quality-assurance.md": "b8d127c4708059475b5706603fdb3e665272ca8d6968105199ccd46b14046aed",
+    "core/workflows/release-doc-refresh-workflow.md": "a3e96192575f335ed0e4d863adef9e55b9741fb8063570de63a45deba903813c",
+    "core/workflows/research-workflow.md": "988d742338263cdd5805b61438ccf6729bc94a3a8d27d41412ebb70982e4b766",
+    "core/workflows/review-process.md": "41e9231e1e7d47586a632c8460f8352a8386eb6bcb6d16f7a2b0ff605c985261",
+    "core/workflows/testing.md": "6239bd1937dcf4260b132f13d596ef139590f54c7eb21048bb4052583b645cf2",
+    "core/workflows/token-budget.md": "ee2e2a1fd9dd2e4c50de1513d732da40e289f8115ccd11d381ba1f64c7d60a09",
+    "core/workflows/ui-design-workflow.md": "04759732fa5799b795c1d0cf304b73cbcbf0d49594650de2b48790dbf7d21bbb",
+    "core/workflows/version-governance-workflow.md": "52fcbf3a0a98c289350329f7079a6abf0e7d22e69c5dadb32918a4913d46d9f6",
+    "meta/adr-archive.md": "c8c6a70c1e20e70735a74ad6ce10037b000af462fcdf3d814ad01b484b4fc243",
+    "meta/agent-protocol-rules.md": "44d5f882152d6b9d9ce357258022cef440b2e3f146e0b8e094ecedd084cdff54",
+    "meta/protocol-adr.md": "0858568424c3e4d70ae98b6223a2dc57a5f83cede96a2a6816492b9fc5fd71c1",
+    "meta/self-check-prompt.md": "62f32da9f336c1bf885fbbea0df71871a0d11e572d4045ab7d1726fe3851fe0c",
+    "scripts/init_agent.py": "41c3e4ff1a7f562ef05922d698bbdc3fec9515d8e4c88864e119f06602840c58",
+    "scripts/lint-protocol.py": "13eaa7f0920b0383a11d2ed57f7cc6a94ec59ff51fd131e1fecb14a2daaa6ce3",
+    "scripts/requirements.txt": "ada6fecc97d33902264d3589826fd045d445567e3bb3710198a27b0318fafe64",
+    "scripts/token-counter.py": "d32d4ebaf072c0835b4ce249c529b218849eda0504baa362db4bd157da93d284",
+    "skills/agent-governance/SKILL.md": "bb560783ff7885036fd8519b2e5bd3b73f8dcf84a4e5d3bd05fccb185473819f",
+    "skills/ai-integration/domain-adaptation.md": "d4ca25989eb385fa1b2cfe865cd53c12bcc603dc7ecfc3a7b5b6a3c5a6c8c3eb",
+    "skills/ai-integration/llm-client.md": "ec6552d5171a261b469377775c026608e1702b3521559936d31502446811ad98",
+    "skills/ai-integration/prompt-engineering.md": "35fcdc945e87f8a86e6bded5e0627a6567d6a8cc665a810f7acb54ff47b4931d",
+    "skills/guardian/SKILL.md": "cea0c54a98e93e3b8b01f6527a174f2531fd04dc6d8e6094241c406c092f0d8a",
+    "skills/skill-interface.md": "6be2eae8022ee8888776230118874935c0f05bfe0ab091c57298fed74fe0c2c6",
+    "start-here.md": "0cda2db8916ae29415b6f02618dd1d3b9416bb5cf49624e67391befa9eee59cf"
+  }
+}

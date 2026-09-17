@@ -1,0 +1,13 @@
+# .agent 协议工具依赖
+# 注意：这些是辅助工具的依赖，与主项目分离
+
+# 基础依赖（标准库已包含，无需安装）
+# - pathlib
+# - argparse
+# - json
+# - re
+
+# 可选依赖（用于增强功能）
+# tiktoken>=0.5.0    # 精确 Token 计数
+# aiohttp>=3.8.0     # 异步 HTTP 客户端
+# pyyaml>=6.0        # YAML 配置支持

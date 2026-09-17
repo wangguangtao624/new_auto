@@ -1,0 +1,30 @@
+# QG-0: Version drift guard (copy to .github/workflows/ or merge into ci.yml)
+#
+# Validates structured version governance before build/test jobs.
+# Requires: pip install cokodo-agent (or project-local editable install)
+
+name: QG-0 Version Drift
+
+on:
+  workflow_call:
+
+jobs:
+  qg0-version-drift:
+    name: QG-0 version drift guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install cokodo-agent
+        run: pip install cokodo-agent
+
+      - name: Run verify-versions script
+        run: python .agent/scripts/verify-versions.py
+
+      - name: Lint version-state rule
+        run: co lint --rule version-state
