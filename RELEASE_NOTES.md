@@ -1,4 +1,9 @@
-# New Auto 2.1.0
+# New Auto 2.3.0（当前版本 / master）
+
+> **版本线说明**：本仓库此前并行存在两条线 ——
+> 「发布工程线」`v2.0.0` / `v2.2.0`（追加发版文档与 `.agent/` 治理脚手架，`app/` 代码仍是重构前的旧节点名）
+> 与「主线」（本次的节点重构 + AI 助手）。
+> **2.3.0 是两条线的合并结果：`master` HEAD 即最新代码，`v2.3.0` 为最新正式版本。**
 
 ## Highlights
 
@@ -13,6 +18,7 @@
   （`power_off` / `release_device` 重建句柄 + `ensure_video` 兜底）。
 - 新增回归脚本：`smoke_ui.cjs`（38 项断言）/ `ui_probe.cjs` / `verify_i2c_rows.cjs` /
   `verify_full_case.cjs` / `run_case.cjs` / `test_agent.cjs` / `test_ai_ui.cjs`。
+- 保留 `v2.2.0` 引入的 `.agent/` 治理脚手架（71 个文件），未做删改。
 
 ## Verified hardware result
 
@@ -24,21 +30,28 @@
 ## Known issues
 
 - `tests/test_relay.py`、`tests/test_agent.py` 是按 2.0.0 的 `RelayController(..., transport=)` 与
-  `agent.agent_status()` 接口写的；2.1.0 的 `modules/relay.py`（SDK-only）与 `app/engine/agent.py`
+  `agent.agent_status()` 接口写的；本版的 `modules/relay.py`（SDK-only）与 `app/engine/agent.py`
   已不提供这两个接口，需改写后才能跑通。2.0.0 的实现完整保留在 tag `v2.0.0`。
-- `modules/relay.py` 沿用 2.1.0 线的实现（仅 SDK 传输，已真机验证）；
+- `modules/relay.py` 沿用主线实现（仅 SDK 传输，已真机验证）；
   2.0.0 线的 SDK + `serial_a0` 双传输抽象未并入，如需保留可从 `v2.0.0` 取回。
-- 2.0.0 的 `dist/new_auto-2.0.0-windows-x64.zip` 为上一版打包产物，本版未重新打包。
+- `dist/new_auto-2.0.0-windows-x64.zip` 为 2.0.0 的打包产物，本版未重新打包。
 
 ---
 
-# New Auto 2.0.0
+# New Auto 2.2.0（历史：发布工程线）
+
+在 2.0.0 之上引入 `.agent/` 治理脚手架（工作流 / 规范 / CI 模板 / 校验脚本，共 71 个文件），
+`app/` 代码未改动。本版本不推荐单独使用，内容已由 2.3.0 完整承接。
+
+---
+
+# New Auto 2.0.0（历史）
 
 ## Highlights
 
 - 画布编辑器采用工业控制台视觉，支持节点搜索、运行监控和数据连线。
 - AI 用例生成入口、模型状态与本地 Key 状态可见。
-- COM3 / Channel 0 改为 PixelIDE SDK 真实继电器控制，不再使用无回执的 A0 串口假成功判断。
+- 继电器改为 PixelIDE SDK 真实控制，不再使用无回执的 A0 串口假成功判断。
 - 新增 `case333` 真机演示：出图、FPS 数据断言、I2C 固件版本数据断言。
 
 ## Verified hardware result
